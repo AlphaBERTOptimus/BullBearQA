@@ -1,5 +1,5 @@
 from .base_agent import BaseAgent
-from tools.news_search_tool import NewsSearchTool
+from ..tools.news_search_tool import NewsSearchTool  # 加了 ..
 
 class SentimentAgent(BaseAgent):
     """市场情绪分析 Agent"""

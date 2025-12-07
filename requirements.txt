@@ -1,0 +1,8 @@
+langchain>=0.0.347
+langchain-openai  # 如果使用OpenAI，或者替换为 deepseek
+langchain-core
+langchain-community
+streamlit
+python-dotenv
+requests
+pandas

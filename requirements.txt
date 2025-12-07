@@ -9,4 +9,5 @@ beautifulsoup4
 lxml
 pandas
 plotly
-pydantic==2.7.1
+pydantic>=2.8.0
+pydantic-core>=2.20.0

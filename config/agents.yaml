@@ -1,0 +1,20 @@
+agents:
+  fundamental:
+    name: "基本面分析师"
+    role: "分析公司财务指标（PE、ROE、营收、利润等），评估估值合理性。"
+    tools: ["stock_data_tool"]
+
+  technical:
+    name: "技术面分析师"
+    role: "分析价格走势、技术指标（RSI、MACD、均线等），判断买卖信号。"
+    tools: ["technical_indicator_tool"]
+
+  sentiment:
+    name: "情绪面分析师"
+    role: "分析新闻、社交媒体、市场情绪，识别热点和风险。"
+    tools: ["news_search_tool"]
+
+  risk:
+    name: "风险分析师"
+    role: "评估宏观、行业、个股风险，提供风控建议。"
+    tools: ["news_search_tool"]

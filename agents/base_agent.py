@@ -1,7 +1,5 @@
-from langchain.agents import AgentExecutor, create_react_agent
+from langchain.agents import create_tool_calling_agent, AgentExecutor
 from langchain_core.prompts import ChatPromptTemplate
-from langchain.agents.format_scratchpad import format_log_to_str
-from langchain.agents.output_parsers import ReActSingleInputOutputParser
 
 class BaseAgent:
     """Agent 基类"""
@@ -31,12 +29,13 @@ class BaseAgent:
         # 创建 prompt
         prompt = ChatPromptTemplate.from_messages([
             ("system", self.system_prompt),
+            ("placeholder", "{chat_history}"),
             ("human", "{input}"),
-            ("assistant", "{agent_scratchpad}")
+            ("placeholder", "{agent_scratchpad}")
         ])
         
-        # 创建 ReAct agent
-        agent = create_react_agent(
+        # 创建 tool calling agent
+        agent = create_tool_calling_agent(
             llm=self.llm,
             tools=self.tools,
             prompt=prompt
@@ -48,8 +47,7 @@ class BaseAgent:
             tools=self.tools,
             verbose=True,
             max_iterations=3,
-            handle_parsing_errors=True,
-            return_intermediate_steps=False
+            handle_parsing_errors=True
         )
         
         return agent_executor
@@ -57,7 +55,10 @@ class BaseAgent:
     def run(self, question: str) -> str:
         """运行 agent"""
         try:
-            result = self.agent_executor.invoke({"input": question})
+            result = self.agent_executor.invoke({
+                "input": question,
+                "chat_history": []
+            })
             return result.get("output", "抱歉，无法生成回答。")
         except Exception as e:
             error_msg = str(e)

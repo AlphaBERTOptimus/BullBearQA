@@ -1,5 +1,5 @@
 from agents.base_agent import BaseAgent
-from tools.stock_data_tool import StockDataTool
+from tools.technical_indicator_tool import TechnicalIndicatorTool
 
 class TechnicalAgent(BaseAgent):
     """技术分析 Agent"""

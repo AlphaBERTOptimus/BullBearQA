@@ -1,5 +1,5 @@
-from .base_agent import BaseAgent
-from ..tools.news_search_tool import NewsSearchTool  # 加了 ..
+from agents.base_agent import BaseAgent
+from tools.stock_data_tool import StockDataTool
 
 class SentimentAgent(BaseAgent):
     """市场情绪分析 Agent"""

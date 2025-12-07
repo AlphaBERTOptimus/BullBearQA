@@ -1,8 +1,10 @@
-langchain>=0.0.347
-langchain-openai  # 如果使用OpenAI，或者替换为 deepseek
-langchain-core
-langchain-community
 streamlit
+langchain>=0.1.0
+langchain-core>=0.1.0
+langchain-community>=0.1.0
 python-dotenv
 requests
+yfinance
+beautifulsoup4
+lxml
 pandas

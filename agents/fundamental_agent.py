@@ -1,5 +1,5 @@
 from .base_agent import BaseAgent
-from tools.stock_data_tool import StockDataTool
+from ..tools.stock_data_tool import StockDataTool 
 
 class FundamentalAgent(BaseAgent):
     """基本面分析 Agent"""

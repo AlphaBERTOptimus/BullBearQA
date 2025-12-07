@@ -110,20 +110,29 @@ st.markdown(
 # 初始化组件（使用缓存）
 # =====================================================
 @st.cache_resource
-def get_components(_api_key):
-    """初始化所有组件（API Key 仅用于触发重新初始化）"""
-    if not _api_key:
-        return None, None, None, None, None, None
+def get_components(api_key: str):
+    """初始化所有组件（带缓存）"""
+    # 初始化 LLM
+    llm = ChatOpenAI(
+        model="deepseek-chat",
+        openai_api_key=api_key,
+        openai_api_base="https://api.deepseek.com",
+        temperature=0.7
+    )
     
-    router = QuestionRouter()
-    fundamental_agent = FundamentalAgent()
-    technical_agent = TechnicalAgent()
-    sentiment_agent = SentimentAgent()
-    comparison_agent = ComparisonAgent()
-    judge = ArenaJudge()
+    # 初始化路由器
+    router = QuestionRouter(llm)
+    
+    # 初始化所有 agents（传入 llm 参数）
+    fundamental_agent = FundamentalAgent(llm)
+    technical_agent = TechnicalAgent(llm)
+    sentiment_agent = SentimentAgent(llm)
+    comparison_agent = ComparisonAgent(llm)
+    
+    # 初始化 Arena Judge
+    judge = ArenaJudge(llm)
     
     return router, fundamental_agent, technical_agent, sentiment_agent, comparison_agent, judge
-
 # 获取组件
 if api_key:
     router, fundamental_agent, technical_agent, sentiment_agent, comparison_agent, judge = get_components(api_key)

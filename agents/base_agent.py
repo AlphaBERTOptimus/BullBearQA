@@ -2,56 +2,68 @@ from langchain.agents import AgentExecutor, create_react_agent
 from langchain_core.prompts import ChatPromptTemplate
 from langchain.agents.format_scratchpad import format_log_to_str
 from langchain.agents.output_parsers import ReActSingleInputOutputParser
-from langchain_openai import ChatOpenAI
-import os
 
 class BaseAgent:
-    def __init__(self, name: str, role: str, tools: list, model_name: str = "deepseek-chat"):
-        self.name = name
-        self.role = role
+    """Agent 基类"""
+    
+    def __init__(self, llm, tools, agent_type="base"):
+        self.llm = llm
         self.tools = tools
+        self.agent_type = agent_type
         
-        # 初始化 LLM
-        self.llm = ChatOpenAI(
-            model=model_name,
-            openai_api_key=os.getenv("DEEPSEEK_API_KEY"),
-            openai_api_base="https://api.deepseek.com/v1",
-            temperature=0
-        )
+        # 设置系统提示词
+        self.system_prompt = """你是一个专业的股票分析助手。
+
+请遵循以下规则：
+1. 必须使用提供的工具来获取实时数据
+2. 基于工具返回的数据进行专业分析
+3. 给出清晰的结论和建议
+4. 如果数据不完整，请明确说明
+5. 保持客观，避免过度承诺
+
+请根据用户的问题，使用合适的工具获取数据并进行分析。"""
         
-        # 创建 Prompt
-        self.prompt = ChatPromptTemplate.from_messages([
-            ("system", f"""你是 {name}，角色是：{role}
-
-重要规则：
-1. 使用提供的工具获取数据
-2. 数据分析要专业、客观
-3. 给出明确的结论和建议
-4. 如果数据不足，明确说明
-5. 避免过度乐观或悲观
-
-请基于工具返回的数据进行专业分析。"""),
-            MessagesPlaceholder(variable_name="chat_history", optional=True),
-            ("user", "{input}"),
-            MessagesPlaceholder(variable_name="agent_scratchpad")
+        # 创建 agent
+        self.agent_executor = self._create_agent()
+    
+    def _create_agent(self):
+        """创建 agent"""
+        # 创建 prompt
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", self.system_prompt),
+            ("human", "{input}"),
+            ("assistant", "{agent_scratchpad}")
         ])
         
-        # 创建 Agent
-        self.agent = create_tool_calling_agent(self.llm, self.tools, self.prompt)
-        
-        # 创建 AgentExecutor
-        self.agent_executor = AgentExecutor(
-            agent=self.agent,
+        # 创建 ReAct agent
+        agent = create_react_agent(
+            llm=self.llm,
             tools=self.tools,
-            verbose=False,
-            handle_parsing_errors=True,
-            max_iterations=3
+            prompt=prompt
         )
+        
+        # 创建 executor
+        agent_executor = AgentExecutor(
+            agent=agent,
+            tools=self.tools,
+            verbose=True,
+            max_iterations=3,
+            handle_parsing_errors=True,
+            return_intermediate_steps=False
+        )
+        
+        return agent_executor
     
     def run(self, question: str) -> str:
-        """执行分析"""
+        """运行 agent"""
         try:
             result = self.agent_executor.invoke({"input": question})
-            return result['output']
+            return result.get("output", "抱歉，无法生成回答。")
         except Exception as e:
-            return f"❌ {self.name} 执行出错: {str(e)}"
+            error_msg = str(e)
+            if "rate limit" in error_msg.lower():
+                return "⚠️ API 请求过于频繁，请稍后再试（建议等待 1 分钟）"
+            elif "invalid" in error_msg.lower() or "not found" in error_msg.lower():
+                return f"❌ 遇到错误：{error_msg}"
+            else:
+                return f"❌ 处理过程中出现错误：{error_msg}"

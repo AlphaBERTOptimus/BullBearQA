@@ -1,1 +1,3 @@
-# router package
+def __init__(self, llm: ChatOpenAI):
+    self.llm = llm
+    # ...

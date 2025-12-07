@@ -1,5 +1,5 @@
-from .base_agent import BaseAgent
-from ..tools.comparison_tool import ComparisonTool  # 加了 ..
+from agents.base_agent import BaseAgent
+from tools.comparison_tool import ComparisonTool
 
 class ComparisonAgent(BaseAgent):
     """股票对比分析 Agent"""

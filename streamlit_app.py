@@ -1,95 +1,133 @@
 import streamlit as st
+import os
 from router.question_router import QuestionRouter
 from agents.fundamental_agent import FundamentalAgent
 from agents.technical_agent import TechnicalAgent
 from agents.sentiment_agent import SentimentAgent
+from agents.comparison_agent import ComparisonAgent
 from judge.arena_judge import ArenaJudge
+import time
 
-# ==============================
-# 安全提示：API Key 由用户输入，不存储、不提交
-# ==============================
+# =====================================================
+# 页面配置
+# =====================================================
+st.set_page_config(
+    page_title="BullBearQA - 智能股票分析",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-st.set_page_config(page_title="BullBearQA", page_icon="🧠", layout="wide")
-st.title("🧠 BullBearQA - AI金融问答系统")
-st.caption("🔒 您的 API Key 仅在本次会话中使用，不会被保存或上传")
+# =====================================================
+# 自定义CSS样式
+# =====================================================
+st.markdown("""
+<style>
+    .main-header {
+        font-size: 3rem;
+        font-weight: bold;
+        text-align: center;
+        background: linear-gradient(90deg, #1e3a8a, #059669);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 1rem;
+    }
+    .sub-header {
+        text-align: center;
+        color: #6b7280;
+        margin-bottom: 2rem;
+    }
+    .stAlert {
+        margin-top: 1rem;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-# ==============================
-# 侧边栏：API Key 输入
-# ==============================
+# =====================================================
+# 侧边栏 - API Key 输入
+# =====================================================
 with st.sidebar:
-    st.header("🔑 API 配置")
+    st.title("🔐 配置")
+    
     api_key = st.text_input(
-        "请输入 DeepSeek API Key",
+        "DeepSeek API Key",
         type="password",
-        placeholder="sk-...",
         help="从 https://platform.deepseek.com 获取"
     )
+    
     if api_key:
-        st.success("✅ Key 已输入")
+        os.environ["DEEPSEEK_API_KEY"] = api_key
+        st.success("✅ API Key 已设置")
     else:
         st.warning("⚠️ 请输入 API Key")
-
-    st.markdown("---")
-    st.info("""
-    **说明**：
-    - Key 仅用于本次会话
-    - 不会保存到服务器或 GitHub
-    - 刷新页面后需重新输入
+    
+    st.divider()
+    
+    st.subheader("📖 使用指南")
+    st.markdown("""
+    **BullBearQA** 支持以下类型的问题：
+    
+    🔹 **基本面分析**
+    - "AAPL的PE怎么样？"
+    - "分析TSLA的财务状况"
+    
+    🔹 **技术面分析**
+    - "NVDA的RSI是多少？"
+    - "MSFT的技术指标如何？"
+    
+    🔹 **市场情绪**
+    - "最近GOOGL的新闻如何？"
+    - "市场对META的看法"
+    
+    🔹 **股票对比**
+    - "比较AAPL和MSFT"
+    - "NVDA vs AMD 哪个更好？"
     """)
+    
+    st.divider()
+    
+    st.subheader("⚙️ 高级设置")
+    
+    show_routing = st.checkbox("显示路由信息", value=True)
+    show_timing = st.checkbox("显示执行时间", value=True)
+    
+    st.divider()
+    
+    if st.button("🗑️ 清空对话历史"):
+        st.session_state.messages = []
+        st.rerun()
 
-# ==============================
-# 主界面：问答
-# ==============================
-if not api_key:
-    st.info("👈 请在左侧侧边栏输入 DeepSeek API Key 后开始提问")
-    st.stop()
+# =====================================================
+# 主页面
+# =====================================================
+st.markdown('<div class="main-header">📊 BullBearQA</div>', unsafe_allow_html=True)
+st.markdown(
+    '<div class="sub-header">基于多Agent系统的智能股票分析平台 | Powered by DeepSeek & LangChain</div>',
+    unsafe_allow_html=True
+)
 
-# 初始化组件（带 API Key）
+# =====================================================
+# 初始化组件（使用缓存）
+# =====================================================
 @st.cache_resource
-def get_components(_api_key: str):
-    # 注入 API Key 到所有组件
-    import os
-    os.environ["DEEPSEEK_API_KEY"] = _api_key  # 用于后续 LLM 初始化
-
+def get_components(_api_key):
+    """初始化所有组件（API Key 仅用于触发重新初始化）"""
+    if not _api_key:
+        return None, None, None, None, None, None
+    
     router = QuestionRouter()
+    fundamental_agent = FundamentalAgent()
+    technical_agent = TechnicalAgent()
+    sentiment_agent = SentimentAgent()
+    comparison_agent = ComparisonAgent()
     judge = ArenaJudge()
-    agents = {
-        "fundamental": FundamentalAgent(),
-        "technical": TechnicalAgent(),
-        "sentiment": SentimentAgent()
-    }
-    return router, judge, agents
+    
+    return router, fundamental_agent, technical_agent, sentiment_agent, comparison_agent, judge
 
-# 使用 _api_key 避免缓存依赖（但内容不变，可安全缓存）
-router, judge, agents = get_components(api_key)
+# 获取组件
+if api_key:
+    router, fundamental_agent, technical_agent, sentiment_agent, comparison_agent, judge = get_components(api_key)
+else:
+    router = None
 
-# 聊天历史
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-for msg in st.session_state.messages:
-    st.chat_message(msg["role"]).write(msg["content"])
-
-if prompt := st.chat_input("例如：MU的PE怎么样？或比较NVDA和AMD的基本面"):
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    st.chat_message("user").write(prompt)
-
-    with st.spinner("AI正在思考..."):
-        try:
-            route_result = router.route(prompt)
-            needed_agents = route_result.get("agents", ["fundamental"])
-            agent_outputs = []
-
-            for agent_name in needed_agents:
-                if agent_name in agents:
-                    res = agents[agent_name].run(prompt)
-                    agent_outputs.append(f"【{agent_name}】: {res['output']}")
-
-            full_input = "\n".join(agent_outputs)
-            final_answer = judge.judge(full_input)
-
-            st.session_state.messages.append({"role": "assistant", "content": final_answer})
-            st.chat_message("assistant").write(final_answer)
-        except Exception as e:
-            st.error(f"❌ 分析出错: {str(e)}")
-            st.chat_message("assistant").error(f"分析失败: {str(e)}")
+# ==========

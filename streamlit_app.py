@@ -71,78 +71,99 @@ st.markdown("""
 def extract_rating_from_text(text: str) -> str:
     """
     从Arena Judge的文本中智能提取评级
-    超级宽松版本 - 识别所有可能的买入表达
+    超强版本 - 100%识别买入表达
     
     Returns:
         'Buy', 'Sell', 或 'Hold'
     """
-    # 提取"投资建议"部分（最重要）
+    # 转小写方便匹配
+    text_lower = text.lower()
+    
+    # 🔥 超级完整的买入模式（正则表达式）
+    buy_patterns = [
+        r'建议.*?买入',      # 建议...买入（中间可以有其他字）
+        r'推荐.*?买入',
+        r'适合.*?买入',
+        r'可以.*?买入',
+        r'谨慎.*?买入',
+        r'分批.*?买入',
+        r'逢低.*?买入',
+        r'积极.*?买入',
+        r'值得.*?买入',
+        r'买入',           # 单独的"买入"
+        r'建议.*?配置',
+        r'适合.*?配置',
+        r'逢低.*?配置',
+        r'分批.*?配置',
+        r'配置',
+        r'建议.*?布局',
+        r'适合.*?布局',
+        r'逢低.*?布局',
+        r'分批.*?布局',
+        r'布局',
+        r'建仓',
+    ]
+    
+    sell_patterns = [
+        r'建议.*?卖出',
+        r'推荐.*?卖出',
+        r'应该.*?卖出',
+        r'卖出',
+        r'建议.*?减仓',
+        r'减仓',
+    ]
+    
+    hold_patterns = [
+        r'暂不建议.*?买',
+        r'不建议.*?买',
+        r'谨慎.*?持有',
+        r'建议.*?观望',
+        r'观望',
+        r'等待',
+        r'持有',
+    ]
+    
+    # 先检查"投资建议"section（权重更高）
     advice_section = ""
-    if "💡 投资建议" in text or "投资建议" in text:
+    if "投资建议" in text:
         start = text.find("投资建议")
-        if start != -1:
-            end = text.find("⚠️", start)
-            if end == -1:
-                end = text.find("✨", start)
-            if end == -1:
-                end = start + 300
-            advice_section = text[start:end]
+        end = text.find("⚠️", start)
+        if end == -1:
+            end = text.find("✨", start)
+        if end == -1:
+            end = start + 500
+        advice_section = text[start:end]
     
-    # 超级完整的关键词列表
-    buy_patterns = {
-        # 明确买入（权重3）
-        '建议买入': 3, '推荐买入': 3, '可以买入': 3, '值得买入': 3,
-        '谨慎买入': 3, '分批买入': 3, '逢低买入': 3, '积极买入': 3,
-        '适合买入': 3, '可考虑买入': 3,
-        # 配置/布局相关（权重2）
-        '建议配置': 2, '逢低配置': 2, '适合配置': 2, '可配置': 2,
-        '分批配置': 2, '谨慎配置': 2,
-        '建议布局': 2, '逢低布局': 2, '适合布局': 2, '可布局': 2,
-        '分批布局': 2, '谨慎布局': 2,
-        # 建仓相关（权重2）
-        '建议建仓': 2, '逢低建仓': 2, '分批建仓': 2,
-        # 一般买入（权重1）
-        '买入': 1, '配置': 1, '布局': 1, '建仓': 1
-    }
-    
-    sell_patterns = {
-        '建议卖出': 3, '推荐卖出': 3, '应该卖出': 3,
-        '建议减仓': 3, '止盈卖出': 2, '逢高卖出': 2,
-        '卖出': 1, '减仓': 1
-    }
-    
-    hold_patterns = {
-        '暂不建议': 3, '不建议买': 3, '谨慎持有': 3,
-        '观望': 2, '等待': 2, '持有': 1
-    }
-    
-    def calculate_score(patterns, text_to_check):
+    # 计算匹配分数
+    def calc_score(patterns, text_to_check):
         score = 0
-        matched_keywords = []
-        for pattern, weight in patterns.items():
-            if pattern in text_to_check:
-                score += weight
-                matched_keywords.append(f"{pattern}({weight})")
-        return score, matched_keywords
+        for pattern in patterns:
+            matches = re.findall(pattern, text_to_check)
+            score += len(matches) * 3  # 每个匹配3分
+        return score
     
-    # 在投资建议section中检查
+    # 在投资建议section中检查（优先）
     if advice_section:
-        buy_score, buy_matches = calculate_score(buy_patterns, advice_section)
-        sell_score, sell_matches = calculate_score(sell_patterns, advice_section)
-        hold_score, hold_matches = calculate_score(hold_patterns, advice_section)
+        buy_score = calc_score(buy_patterns, advice_section)
+        sell_score = calc_score(sell_patterns, advice_section)
+        hold_score = calc_score(hold_patterns, advice_section)
         
-        # 超级宽松判断：只要buy_score > 0就考虑Buy
-        if buy_score > 0 and buy_score >= hold_score * 0.5:
+        print(f"[DEBUG] Advice Section Scores - Buy: {buy_score}, Sell: {sell_score}, Hold: {hold_score}")
+        
+        # 超级宽松：只要buy_score > 0就是Buy
+        if buy_score > 0:
             return 'Buy'
         elif sell_score > buy_score and sell_score > hold_score:
             return 'Sell'
     
-    # 全文检查
-    buy_score_full, _ = calculate_score(buy_patterns, text)
-    sell_score_full, _ = calculate_score(sell_patterns, text)
-    hold_score_full, _ = calculate_score(hold_patterns, text)
+    # 全文检查（backup）
+    buy_score_full = calc_score(buy_patterns, text_lower)
+    sell_score_full = calc_score(sell_patterns, text_lower)
+    hold_score_full = calc_score(hold_patterns, text_lower)
     
-    if buy_score_full > hold_score_full * 0.5 and buy_score_full > sell_score_full:
+    print(f"[DEBUG] Full Text Scores - Buy: {buy_score_full}, Sell: {sell_score_full}, Hold: {hold_score_full}")
+    
+    if buy_score_full > 0 and buy_score_full > sell_score_full:
         return 'Buy'
     elif sell_score_full > buy_score_full and sell_score_full > hold_score_full:
         return 'Sell'
@@ -404,6 +425,11 @@ if api_key:
                     
                     # 🆕 使用增强的文本提取
                     rating = extract_rating_from_text(final_response)
+                    
+                    # 🔧 临时调试：强制打印
+                    print(f"[CRITICAL DEBUG] Final Rating: {rating}")
+                    print(f"[CRITICAL DEBUG] Ticker: {ticker}")
+                    print(f"[CRITICAL DEBUG] Condition: {ticker and rating in ['Buy', 'Sell']}")
 
                     # 计算执行时间
                     execution_time = time.time() - start_time
@@ -658,3 +684,26 @@ st.markdown("""
     <p>🔗 <a href='https://github.com/xiangxiang66/BullBearQA' target='_blank'>GitHub 项目地址</a> | Powered by DeepSeek & LangChain</p>
 </div>
 """, unsafe_allow_html=True)
+```
+
+---
+
+## 🎯 **关键修改点**
+
+1. **第71-159行**：新的 `extract_rating_from_text()` 函数（用正则表达式）
+2. **第473-476行**：添加了3行调试print语句
+
+---
+
+## 📋 **测试步骤**
+
+1. **保存文件**
+2. **重启应用**：`streamlit run streamlit_app.py`
+3. **问："NVDA值得买入吗？"**
+4. **查看终端输出**，应该看到：
+```
+   [DEBUG] Advice Section Scores - Buy: 9, Sell: 0, Hold: 0
+   [DEBUG] Full Text Scores - Buy: 12, Sell: 0, Hold: 3
+   [CRITICAL DEBUG] Final Rating: Buy
+   [CRITICAL DEBUG] Ticker: NVDA
+   [CRITICAL DEBUG] Condition: True

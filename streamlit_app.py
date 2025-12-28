@@ -425,7 +425,21 @@ if api_key:
                     st.session_state.messages.append({"role": "assistant", "content": response_text})
                     
                     # ========== Phase 1: 策略生成与期权推荐 ==========
-                    
+                    # 🔧 调试信息 - 看看到底提取到了什么
+                    st.markdown("---")
+                    st.markdown("### 🔍 调试信息")
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("提取的Ticker", ticker if ticker else "None")
+                    with col2:
+                        st.metric("提取的Rating", rating)
+                    with col3:
+                        st.metric("条件判断", "✅ 通过" if (ticker and rating in ['Buy', 'Sell']) else "❌ 不通过")
+
+                    with st.expander("📄 Arena Judge原始输出（前800字符）", expanded=False):
+                        st.code(final_response[:800])
+                    st.markdown("---")
+                    # 调试信息结束
                     # 1. 策略生成功能（只对Buy和Sell）
                     if ticker and rating in ['Buy', 'Sell']:
                         st.markdown("---")

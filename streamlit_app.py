@@ -177,7 +177,7 @@ BullBearQA 支持以下类型的问题：
     if st.sidebar.checkbox("查看交易记录"):
         all_trades = tracker.get_all_trades()
         if all_trades:
-            for trade in reversed(all_trades[-5:]):  # 显示最近5条
+            for trade in reversed(all_trades[-5:]):
                 status_emoji = {
                     'OPEN': '🟡',
                     'CLOSED_WIN': '✅',
@@ -191,13 +191,11 @@ BullBearQA 支持以下类型的问题：
                     st.sidebar.text(f"   {trade['pnl_pct']:+.1f}%")
         else:
             st.sidebar.write("暂无记录")
-    # ========================================
 
 # 初始化组件（带缓存）
 @st.cache_resource
 def get_components(api_key: str):
     """初始化所有组件（带缓存）"""
-    # 初始化 LLM
     llm = ChatOpenAI(
         model="deepseek-chat",
         openai_api_key=api_key,
@@ -205,22 +203,14 @@ def get_components(api_key: str):
         temperature=0.7
     )
     
-    # 初始化路由器
     router = QuestionRouter(llm)
-    
-    # 初始化所有 agents
     fundamental_agent = FundamentalAgent(llm)
     technical_agent = TechnicalAgent(llm)
     sentiment_agent = SentimentAgent(llm)
     comparison_agent = ComparisonAgent(llm)
-    
-    # 初始化 Arena Judge
     judge = ArenaJudge(llm)
-    
-    # ========== Phase 1: 新增组件初始化 ==========
     strategy_generator = StrategyGenerator()
     options_recommender = OptionsRecommender()
-    # ==========================================
     
     return {
         'router': router,
@@ -244,11 +234,8 @@ for message in st.session_state.messages:
 
 # 主对话界面
 if api_key:
-    # 获取组件
     try:
         components = get_components(api_key)
-        
-        # 提取组件
         router = components['router']
         fundamental_agent = components['fundamental_agent']
         technical_agent = components['technical_agent']
@@ -257,39 +244,26 @@ if api_key:
         judge = components['judge']
         tracker = st.session_state.paper_tracker
         
-        # 用户输入
         if prompt := st.chat_input("请输入你的股票分析问题..."):
-            # 显示用户消息
             st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"):
                 st.markdown(prompt)
             
-            # 处理问题
             with st.chat_message("assistant"):
-                # 创建占位符
                 message_placeholder = st.empty()
-                
-                # 开始计时
                 start_time = time.time()
                 
                 try:
-                    # 1. 路由
                     with st.spinner("🎯 正在分析问题..."):
                         routing_result = router.route(prompt)
                     
-                    # 显示路由信息（如果启用）
                     if show_routing:
                         st.info(router.format_routing_info(routing_result))
                     
-                    # 2. 选择并执行 agent
                     agent_type = routing_result['agent_type']
                     agent_outputs = {}
-                    
-                    # 提取ticker信息（用于后续策略生成）
                     tickers = routing_result.get('tickers', [])
                     ticker = tickers[0] if tickers else None
-                    
-                    # 根据类型选择 agent
                     agents_map = {
                         'fundamental': fundamental_agent,
                         'technical': technical_agent,
@@ -300,59 +274,36 @@ if api_key:
                     selected_agent = agents_map.get(agent_type)
                     
                     if selected_agent:
-                        # 显示进度
                         progress_text = f"📊 正在执行{agent_type}分析..."
                         with st.spinner(progress_text):
                             output = selected_agent.run(prompt)
-                            agent_out
-output = selected_agent.run(prompt)
                             agent_outputs[agent_type] = output
                     
-                    # 3. 如果是对比，可能需要多个 agent
                     if agent_type == 'comparison' and len(routing_result.get('tickers', [])) >= 2:
-                        # 对比分析已经在 comparison_agent 中完成
                         pass
                     
-                    # 4. Arena Judge 综合
                     with st.spinner("🤔 正在生成综合分析..."):
                         final_response = judge.synthesize(prompt, agent_outputs)
                     
-                    # 5. 创建投资评分
                     score_data = judge.create_investment_score(agent_outputs)
                     st.session_state.last_score = score_data
-                    
-                    # 提取rating用于策略生成
                     rating = score_data.get('rating', 'Hold')
-                    
-                    # 计算执行时间
                     execution_time = time.time() - start_time
                     
-                    # 显示最终结果
                     response_text = final_response
                     if show_timing:
                         response_text += f"\n\n⏱️ 执行时间: {execution_time:.2f}秒"
                     
                     message_placeholder.markdown(response_text)
-                    
-                    # 保存到对话历史
                     st.session_state.messages.append({"role": "assistant", "content": response_text})
                     
-                    # ========== 🔥 修改点：无论什么rating都显示策略 ==========
-                    
-                    # 只要有ticker，就生成策略
                     if ticker:
                         st.markdown("---")
                         st.subheader("📋 可执行交易策略")
                         
-                        # 显示当前评级
-                        rating_emoji = {
-                            'Buy': '🟢',
-                            'Sell': '🔴',
-                            'Hold': '🟡'
-                        }
+                        rating_emoji = {'Buy': '🟢', 'Sell': '🔴', 'Hold': '🟡'}
                         st.info(f"{rating_emoji.get(rating, '🟡')} **当前评级: {rating}**")
                         
-                        # 用户选择风险偏好
                         col1, col2 = st.columns([3, 1])
                         with col1:
                             risk_tolerance = st.select_slider(
@@ -363,63 +314,47 @@ output = selected_agent.run(prompt)
                                 key=f"risk_{ticker}_{time.time()}"
                             )
                         
-                        # 🔥 关键：强制设置rating为Buy或Sell（用于生成策略）
-                        # 如果是Hold，默认生成Buy策略（用户可以选择不保存）
                         strategy_rating = rating if rating in ['Buy', 'Sell'] else 'Buy'
-                        
-                        # 生成策略
                         strategy = components['strategy_generator'].generate_strategy(
                             ticker=ticker,
-                            rating=strategy_rating,  # 使用修正后的rating
+                            rating=strategy_rating,
                             analysis_result=agent_outputs,
                             risk_tolerance=risk_tolerance
                         )
                         
                         if strategy:
-                            # 如果原始rating是Hold，给出提示
                             if rating == 'Hold':
                                 st.warning("💡 **注意**: 当前评级为Hold，以下策略仅供参考。如果你决定交易，建议谨慎操作。")
                             
-                            # 显示策略
                             st.success(f"✅ 已生成 {strategy['action']} 策略")
                             
-                            # 关键指标
                             col1, col2, col3, col4 = st.columns(4)
-                            
                             with col1:
                                 st.metric("入场价", f"${strategy['entry_price']:.2f}")
                             with col2:
                                 gain = ((strategy['target_price']/strategy['entry_price']-1)*100)
-                                st.metric("目标价", f"${strategy['target_price']:.2f}", 
-                                         delta=f"+{gain:.1f}%", delta_color="normal")
+                                st.metric("目标价", f"${strategy['target_price']:.2f}", delta=f"+{gain:.1f}%", delta_color="normal")
                             with col3:
                                 loss = ((1-strategy['stop_loss']/strategy['entry_price'])*100)
-                                st.metric("止损价", f"${strategy['stop_loss']:.2f}", 
-                                         delta=f"-{loss:.1f}%", delta_color="inverse")
+                                st.metric("止损价", f"${strategy['stop_loss']:.2f}", delta=f"-{loss:.1f}%", delta_color="inverse")
                             with col4:
                                 st.metric("建议仓位", strategy['position_size'])
                             
-                            # 策略详情
                             with st.expander("📊 策略详情", expanded=True):
                                 col1, col2 = st.columns(2)
-                                
                                 with col1:
                                     st.write("**风险回报比**")
                                     st.info(f"1 : {strategy['risk_reward_ratio']}")
-                                    
                                     st.write("**持仓周期**")
                                     st.info(strategy['time_horizon'])
-                                
                                 with col2:
                                     st.write("**策略理由**")
                                     st.info(strategy['reason'])
-                                    
                                     st.write("**信心度**")
                                     confidence = strategy['confidence']
                                     st.progress(confidence)
                                     st.caption(f"{confidence*100:.0f}%")
                             
-                            # 可复制的交易订单
                             st.write("**📝 交易订单（可复制）**")
                             order_text = f"""
 交易订单
@@ -440,21 +375,18 @@ output = selected_agent.run(prompt)
                             """
                             st.code(order_text, language="text")
                             
-                            # 💾 保存到模拟盘按钮（这就是你要找的！）
                             col1, col2 = st.columns([1, 3])
                             with col1:
                                 if st.button("💾 保存到模拟盘", type="primary", key=f"save_{ticker}_{time.time()}"):
                                     trade_id = tracker.add_trade(strategy)
                                     st.success(f"✅ 已保存（编号 #{trade_id}）")
                                     st.balloons()
-                                    # 触发侧边栏更新
                                     st.rerun()
                             with col2:
                                 st.caption("💡 保存后可在侧边栏查看交易记录和追踪盈亏")
                         else:
                             st.warning("⚠️ 策略生成失败，可能是获取价格数据失败，请稍后重试")
                         
-                        # 期权策略推荐（所有情况都显示）
                         st.markdown("---")
                         st.subheader("📊 期权策略推荐（进阶）")
                         
@@ -463,7 +395,6 @@ output = selected_agent.run(prompt)
                         else:
                             st.caption("💡 如果你了解期权，可以考虑以下策略")
                         
-                        # 用户选择波动率
                         volatility = st.select_slider(
                             "当前波动率",
                             options=["low", "medium", "high"],
@@ -472,48 +403,34 @@ output = selected_agent.run(prompt)
                             key=f"vol_{ticker}_{time.time()}"
                         )
                         
-                        # 推荐策略
-                        options_strategies = components['options_recommender'].recommend_strategies(
-                            ticker=ticker,
-                            rating=rating,
-                            volatility=volatility
-                        )
+                        options_strategies = components['options_recommender'].recommend_strategies(ticker, rating, volatility)
                         
-                        # 显示策略
                         for i, strategy_opt in enumerate(options_strategies, 1):
                             with st.expander(f"{strategy_opt['name']} - 复杂度: {strategy_opt['complexity']}", expanded=(i==1 and rating=='Hold')):
                                 col1, col2 = st.columns(2)
-                                
                                 with col1:
                                     st.write("**基本信息**")
                                     st.write(f"适合场景: {strategy_opt['适合场景']}")
                                     st.write(f"风险: {strategy_opt['风险']}")
                                     st.write(f"收益: {strategy_opt['收益']}")
                                     st.write(f"成本: {strategy_opt['成本']}")
-                                
                                 with col2:
                                     st.write("**推荐度**")
                                     st.write(strategy_opt['推荐度'])
-                                    
                                     if '⚠️ 风险提示' in strategy_opt:
                                         st.warning(strategy_opt['⚠️ 风险提示'])
                                     elif '💡 提示' in strategy_opt:
                                         st.info(strategy_opt['💡 提示'])
-                                
                                 st.write("**策略说明**")
                                 st.info(strategy_opt['说明'])
-                                
                                 if strategy_opt.get('优点'):
                                     st.write("**优点**")
                                     for pro in strategy_opt['优点']:
                                         st.write(f"✅ {pro}")
-                                
                                 if strategy_opt.get('缺点'):
                                     st.write("**缺点**")
                                     for con in strategy_opt['缺点']:
                                         st.write(f"⚠️ {con}")
-                    
-                    # ========== Phase 1 功能结束 ==========
                     
                 except Exception as e:
                     error_message = f"❌ 处理过程中出现错误: {str(e)}"
@@ -525,10 +442,8 @@ output = selected_agent.run(prompt)
         st.info("💡 请检查 API Key 是否正确，或稍后重试。")
 
 else:
-    # 未设置 API Key 的提示
     st.info("👈 请在左侧侧边栏输入你的 DeepSeek API Key 以开始使用")
     
-    # 示例问题
     st.markdown("### 💡 示例问题")
     col1, col2 = st.columns(2)
     
@@ -556,7 +471,6 @@ else:
         **💡 所有查询都会生成可追踪的交易策略！**
         """)
 
-# 页面底部信息
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666;'>

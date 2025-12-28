@@ -12,4 +12,4 @@ plotly
 pydantic>=2.8.0
 pydantic-core>=2.20.0
 pandas>=2.0.0
-numpy>=1.24.0v
+numpy>=1.24.0

@@ -69,13 +69,13 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # 🆕 增强版评级提取函数
-def extract_rating_from_text(text: str) -> str:
+def extract_rating_from_text(text: str) -> tuple:
     """
     从Arena Judge的文本中智能提取评级
     使用计分系统，识别各种中文表达
     
     Returns:
-        'Buy', 'Sell', 或 'Hold'
+        (rating, debug_info): 评级和调试信息的元组
     """
     # 提取"投资建议"部分（最重要）
     advice_section = ""
@@ -97,8 +97,9 @@ def extract_rating_from_text(text: str) -> str:
         '谨慎买入': 3, '分批买入': 3, '逢低买入': 3, '积极买入': 3,
         # 倾向买入（权重2）
         '适合买': 2, '建议配置': 2, '可考虑买': 2,
+        '逢低配置': 2, '适合配置': 2, '可配置': 2,  # 🆕 添加"配置"关键词
         # 一般买入（权重1）
-        '买入': 1
+        '买入': 1, '配置': 1  # 🆕 添加"配置"
     }
     
     sell_patterns = {
@@ -127,7 +128,7 @@ def extract_rating_from_text(text: str) -> str:
         hold_score = calculate_score(hold_patterns, advice_section)
         
         # 调试输出（可以注释掉）
-        print(f"Advice Section Scores - Buy:{buy_score} Sell:{sell_score} Hold:{hold_score}")
+        # print(f"Advice Section Scores - Buy:{buy_score} Sell:{sell_score} Hold:{hold_score}")
         
         # 判断（买入信号强于持有信号才返回Buy）
         if buy_score > 0 and buy_score >= hold_score:  # 买入信号只需等于或强于持有

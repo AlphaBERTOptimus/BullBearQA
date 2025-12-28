@@ -127,7 +127,7 @@ def extract_rating_from_text(text: str) -> str:
         hold_score = calculate_score(hold_patterns, advice_section)
         
         # 调试输出（可以注释掉）
-        # print(f"Advice Section Scores - Buy:{buy_score} Sell:{sell_score} Hold:{hold_score}")
+        print(f"Advice Section Scores - Buy:{buy_score} Sell:{sell_score} Hold:{hold_score}")
         
         # 判断（买入信号强于持有信号才返回Buy）
         if buy_score > 0 and buy_score >= hold_score:  # 买入信号只需等于或强于持有

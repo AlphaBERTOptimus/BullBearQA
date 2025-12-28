@@ -68,38 +68,84 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# 🆕 智能提取评级的辅助函数
+# 🆕 增强版评级提取函数
 def extract_rating_from_text(text: str) -> str:
     """
     从Arena Judge的文本中智能提取评级
-    
-    优先级:
-    1. 明确的Buy/Sell/Hold关键词
-    2. "建议买入" / "建议卖出" / "建议持有"
-    3. 从投资建议section提取
+    使用计分系统，识别各种中文表达
     
     Returns:
         'Buy', 'Sell', 或 'Hold'
     """
-    text_lower = text.lower()
+    # 提取"投资建议"部分（最重要）
+    advice_section = ""
+    if "💡 投资建议" in text or "投资建议" in text:
+        start = text.find("投资建议")
+        if start != -1:
+            # 提取到下一个section或200字符
+            end = text.find("⚠️", start)
+            if end == -1:
+                end = text.find("✨", start)
+            if end == -1:
+                end = start + 300
+            advice_section = text[start:end]
     
-    # 检查明确的中文建议
-    if any(word in text for word in ['建议买入', '推荐买入', '建议购买', '可以买入', '值得买入']):
+    # 定义关键词（越具体的权重越高）
+    buy_patterns = {
+        # 明确买入（权重3）
+        '建议买入': 3, '推荐买入': 3, '可以买入': 3, '值得买入': 3,
+        '谨慎买入': 3, '分批买入': 3, '逢低买入': 3, '积极买入': 3,
+        # 倾向买入（权重2）
+        '适合买': 2, '建议配置': 2, '可考虑买': 2,
+        # 一般买入（权重1）
+        '买入': 1
+    }
+    
+    sell_patterns = {
+        '建议卖出': 3, '推荐卖出': 3, '应该卖出': 3,
+        '建议减仓': 3, '止盈卖出': 2, '逢高卖出': 2,
+        '卖出': 1
+    }
+    
+    hold_patterns = {
+        '暂不建议': 3, '不建议买': 3, '谨慎持有': 3,
+        '观望': 2, '等待': 2, '持有': 1
+    }
+    
+    # 计算得分
+    def calculate_score(patterns, text_to_check):
+        score = 0
+        for pattern, weight in patterns.items():
+            if pattern in text_to_check:
+                score += weight
+        return score
+    
+    # 优先在投资建议section中检查
+    if advice_section:
+        buy_score = calculate_score(buy_patterns, advice_section)
+        sell_score = calculate_score(sell_patterns, advice_section)
+        hold_score = calculate_score(hold_patterns, advice_section)
+        
+        # 调试输出（可以注释掉）
+        # print(f"Advice Section Scores - Buy:{buy_score} Sell:{sell_score} Hold:{hold_score}")
+        
+        # 判断（买入信号强于持有信号才返回Buy）
+        if buy_score > 0 and buy_score > hold_score * 1.2:  # 买入需要明显强于持有
+            return 'Buy'
+        elif sell_score > buy_score and sell_score > hold_score:
+            return 'Sell'
+    
+    # 全文检查
+    buy_score_full = calculate_score(buy_patterns, text)
+    sell_score_full = calculate_score(sell_patterns, text)
+    hold_score_full = calculate_score(hold_patterns, text)
+    
+    if buy_score_full > hold_score_full and buy_score_full > sell_score_full:
         return 'Buy'
-    elif any(word in text for word in ['建议卖出', '推荐卖出', '建议减仓', '应该卖出']):
+    elif sell_score_full > buy_score_full and sell_score_full > hold_score_full:
         return 'Sell'
-    elif any(word in text for word in ['建议持有', '继续持有', '暂不建议', '观望', '谨慎', '等待']):
-        return 'Hold'
     
-    # 检查英文关键词
-    if 'buy' in text_lower and 'not' not in text_lower.split('buy')[0][-20:]:
-        return 'Buy'
-    elif 'sell' in text_lower:
-        return 'Sell'
-    elif 'hold' in text_lower:
-        return 'Hold'
-    
-    # 默认返回Hold
+    # 默认Hold
     return 'Hold'
 
 # 侧边栏
@@ -294,7 +340,7 @@ if api_key:
         sentiment_agent = components['sentiment_agent']
         comparison_agent = components['comparison_agent']
         judge = components['judge']
-        tracker = st.session_state.paper_tracker  # 从session_state获取tracker
+        tracker = st.session_state.paper_tracker
         
         # 用户输入
         if prompt := st.chat_input("请输入你的股票分析问题..."):
@@ -358,12 +404,8 @@ if api_key:
                     score_data = judge.create_investment_score(agent_outputs)
                     st.session_state.last_score = score_data
                     
-                    # 🆕 智能提取rating（从Arena Judge的文本中）
-                    rating_from_score = score_data.get('rating', 'Hold')
-                    rating_from_text = extract_rating_from_text(final_response)
-                    
-                    # 优先使用文本提取的rating（更准确）
-                    rating = rating_from_text if rating_from_text != 'Hold' else rating_from_score
+                    # 🆕 使用增强的文本提取
+                    rating = extract_rating_from_text(final_response)
                     
                     # 计算执行时间
                     execution_time = time.time() - start_time
@@ -393,7 +435,7 @@ if api_key:
                                 options=["low", "medium", "high"],
                                 value="medium",
                                 format_func=lambda x: {"low": "🐌 保守", "medium": "🎯 平衡", "high": "🚀 激进"}[x],
-                                key=f"risk_{ticker}"
+                                key=f"risk_{ticker}_{time.time()}"
                             )
                         
                         # 生成策略
@@ -467,7 +509,7 @@ if api_key:
                             # 保存到模拟盘
                             col1, col2 = st.columns([1, 3])
                             with col1:
-                                if st.button("💾 保存到模拟盘", type="primary", key=f"save_{ticker}"):
+                                if st.button("💾 保存到模拟盘", type="primary", key=f"save_{ticker}_{time.time()}"):
                                     trade_id = tracker.add_trade(strategy)
                                     st.success(f"✅ 已保存（编号 #{trade_id}）")
                                     st.balloons()
@@ -507,7 +549,7 @@ if api_key:
                             options=["low", "medium", "high"],
                             value="medium",
                             format_func=lambda x: {"low": "📉 低波动", "medium": "📊 中等", "high": "📈 高波动"}[x],
-                            key=f"vol_{ticker}"
+                            key=f"vol_{ticker}_{time.time()}"
                         )
                         
                         # 推荐策略

@@ -7,7 +7,6 @@ from agents.comparison_agent import ComparisonAgent
 from router.question_router import QuestionRouter
 from judge.arena_judge import ArenaJudge
 import time
-import re
 
 # ========== Phase 1: 新增导入 ==========
 from trading.strategy_generator import StrategyGenerator
@@ -68,87 +67,6 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-def extract_rating_from_text(text: str) -> str:
-    """
-    从Arena Judge的文本中智能提取评级
-    超级宽松版本 - 识别所有可能的买入表达
-    
-    Returns:
-        'Buy', 'Sell', 或 'Hold'
-    """
-    # 提取"投资建议"部分（最重要）
-    advice_section = ""
-    if "💡 投资建议" in text or "投资建议" in text:
-        start = text.find("投资建议")
-        if start != -1:
-            end = text.find("⚠️", start)
-            if end == -1:
-                end = text.find("✨", start)
-            if end == -1:
-                end = start + 300
-            advice_section = text[start:end]
-    
-    # 超级完整的关键词列表
-    buy_patterns = {
-        # 明确买入（权重3）
-        '建议买入': 3, '推荐买入': 3, '可以买入': 3, '值得买入': 3,
-        '谨慎买入': 3, '分批买入': 3, '逢低买入': 3, '积极买入': 3,
-        '适合买入': 3, '可考虑买入': 3,
-        # 配置/布局相关（权重2）
-        '建议配置': 2, '逢低配置': 2, '适合配置': 2, '可配置': 2,
-        '分批配置': 2, '谨慎配置': 2,
-        '建议布局': 2, '逢低布局': 2, '适合布局': 2, '可布局': 2,
-        '分批布局': 2, '谨慎布局': 2,
-        # 建仓相关（权重2）
-        '建议建仓': 2, '逢低建仓': 2, '分批建仓': 2,
-        # 一般买入（权重1）
-        '买入': 1, '配置': 1, '布局': 1, '建仓': 1
-    }
-    
-    sell_patterns = {
-        '建议卖出': 3, '推荐卖出': 3, '应该卖出': 3,
-        '建议减仓': 3, '止盈卖出': 2, '逢高卖出': 2,
-        '卖出': 1, '减仓': 1
-    }
-    
-    hold_patterns = {
-        '暂不建议': 3, '不建议买': 3, '谨慎持有': 3,
-        '观望': 2, '等待': 2, '持有': 1
-    }
-    
-    def calculate_score(patterns, text_to_check):
-        score = 0
-        matched_keywords = []
-        for pattern, weight in patterns.items():
-            if pattern in text_to_check:
-                score += weight
-                matched_keywords.append(f"{pattern}({weight})")
-        return score, matched_keywords
-    
-    # 在投资建议section中检查
-    if advice_section:
-        buy_score, buy_matches = calculate_score(buy_patterns, advice_section)
-        sell_score, sell_matches = calculate_score(sell_patterns, advice_section)
-        hold_score, hold_matches = calculate_score(hold_patterns, advice_section)
-        
-        # 超级宽松判断：只要buy_score > 0就考虑Buy
-        if buy_score > 0 and buy_score >= hold_score * 0.5:
-            return 'Buy'
-        elif sell_score > buy_score and sell_score > hold_score:
-            return 'Sell'
-    
-    # 全文检查
-    buy_score_full, _ = calculate_score(buy_patterns, text)
-    sell_score_full, _ = calculate_score(sell_patterns, text)
-    hold_score_full, _ = calculate_score(hold_patterns, text)
-    
-    if buy_score_full > hold_score_full * 0.5 and buy_score_full > sell_score_full:
-        return 'Buy'
-    elif sell_score_full > buy_score_full and sell_score_full > hold_score_full:
-        return 'Sell'
-    
-    return 'Hold'
-
 # 侧边栏
 with st.sidebar:
     st.markdown("## 🔐 配置")
@@ -187,11 +105,9 @@ BullBearQA 支持以下类型的问题：
 - "比较AAPL和MSFT"
 - "NVDA vs AMD 哪个更好？"
 
-**💡 想看交易策略？**
-试试这些问题：
-- "NVDA值得买入吗？"
-- "应该买入苹果股票吗？"
-- "微软现在可以买吗？"
+**💡 自动生成交易策略**
+- 任何股票查询都会生成可执行策略
+- 支持保存到模拟盘追踪
     """)
     
     st.markdown("---")
@@ -255,13 +171,13 @@ BullBearQA 支持以下类型的问题：
             st.write(f"🎯 最大盈利: {stats['max_win']}%")
             st.write(f"⚠️ 最大亏损: {stats['max_loss']}%")
     else:
-        st.sidebar.info("还没有交易记录\n试试问\"NVDA值得买吗？\"")
+        st.sidebar.info("还没有交易记录\n试试生成策略并保存！")
     
     # 查看所有交易
     if st.sidebar.checkbox("查看交易记录"):
         all_trades = tracker.get_all_trades()
         if all_trades:
-            for trade in reversed(all_trades[-5:]):
+            for trade in reversed(all_trades[-5:]):  # 显示最近5条
                 status_emoji = {
                     'OPEN': '🟡',
                     'CLOSED_WIN': '✅',
@@ -275,6 +191,7 @@ BullBearQA 支持以下类型的问题：
                     st.sidebar.text(f"   {trade['pnl_pct']:+.1f}%")
         else:
             st.sidebar.write("暂无记录")
+    # ========================================
 
 # 初始化组件（带缓存）
 @st.cache_resource
@@ -402,43 +319,36 @@ if api_key:
                     score_data = judge.create_investment_score(agent_outputs)
                     st.session_state.last_score = score_data
                     
-                    # 🆕 使用增强的文本提取
-                    rating = extract_rating_from_text(final_response)
-
+                    # 提取rating用于策略生成
+                    rating = score_data.get('rating', 'Hold')
+                    
                     # 计算执行时间
                     execution_time = time.time() - start_time
-
+                    
                     # 显示最终结果
                     response_text = final_response
                     if show_timing:
                         response_text += f"\n\n⏱️ 执行时间: {execution_time:.2f}秒"
-
+                    
                     message_placeholder.markdown(response_text)
-
+                    
                     # 保存到对话历史
                     st.session_state.messages.append({"role": "assistant", "content": response_text})
                     
-                    # ========== Phase 1: 策略生成与期权推荐 ==========
-                    # 🔧 调试信息 - 看看到底提取到了什么
-                    st.markdown("---")
-                    st.markdown("### 🔍 调试信息")
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("提取的Ticker", ticker if ticker else "None")
-                    with col2:
-                        st.metric("提取的Rating", rating)
-                    with col3:
-                        st.metric("条件判断", "✅ 通过" if (ticker and rating in ['Buy', 'Sell']) else "❌ 不通过")
-
-                    with st.expander("📄 Arena Judge原始输出（前800字符）", expanded=False):
-                        st.code(final_response[:800])
-                    st.markdown("---")
-                    # 调试信息结束
+                    # ========== 🔥 修改点：无论什么rating都显示策略 ==========
                     
-                    # 1. 策略生成功能（只对Buy和Sell）
-                    if ticker and rating in ['Buy', 'Sell']:
+                    # 只要有ticker，就生成策略
+                    if ticker:
                         st.markdown("---")
                         st.subheader("📋 可执行交易策略")
+                        
+                        # 显示当前评级
+                        rating_emoji = {
+                            'Buy': '🟢',
+                            'Sell': '🔴',
+                            'Hold': '🟡'
+                        }
+                        st.info(f"{rating_emoji.get(rating, '🟡')} **当前评级: {rating}**")
                         
                         # 用户选择风险偏好
                         col1, col2 = st.columns([3, 1])
@@ -451,15 +361,23 @@ if api_key:
                                 key=f"risk_{ticker}_{time.time()}"
                             )
                         
+                        # 🔥 关键：强制设置rating为Buy或Sell（用于生成策略）
+                        # 如果是Hold，默认生成Buy策略（用户可以选择不保存）
+                        strategy_rating = rating if rating in ['Buy', 'Sell'] else 'Buy'
+                        
                         # 生成策略
                         strategy = components['strategy_generator'].generate_strategy(
                             ticker=ticker,
-                            rating=rating,
+                            rating=strategy_rating,  # 使用修正后的rating
                             analysis_result=agent_outputs,
                             risk_tolerance=risk_tolerance
                         )
                         
                         if strategy:
+                            # 如果原始rating是Hold，给出提示
+                            if rating == 'Hold':
+                                st.warning("💡 **注意**: 当前评级为Hold，以下策略仅供参考。如果你决定交易，建议谨慎操作。")
+                            
                             # 显示策略
                             st.success(f"✅ 已生成 {strategy['action']} 策略")
                             
@@ -506,6 +424,7 @@ if api_key:
 ━━━━━━━━━━━━━━━━━━
 股票代码: {strategy['ticker']}
 操作: {strategy['action']}
+评级: {rating}
 
 入场价: ${strategy['entry_price']:.2f}
 目标价: ${strategy['target_price']:.2f} (+{strategy['expected_gain_pct']}%)
@@ -527,30 +446,14 @@ if api_key:
                                     st.success(f"✅ 已保存（编号 #{trade_id}）")
                                     st.balloons()
                             with col2:
-                                st.caption("💡 保存后可在侧边栏查看交易记录")
+                                st.caption("💡 保存后可在侧边栏查看交易记录和追踪盈亏")
                         else:
                             st.warning("⚠️ 策略生成失败，可能是获取价格数据失败，请稍后重试")
-                    
-                    elif ticker and rating == 'Hold':
-                        # Hold评级的特殊提示
-                        st.markdown("---")
-                        st.info(f"""
-💡 **当前建议: {rating} (持有/观望)**
-
-由于当前评级为Hold，暂不生成买入/卖出策略。
-
-**你可以**：
-- 📊 查看下方的期权策略（增强收益）
-- 🔔 添加到监控列表，等待更好时机
-- 📈 继续跟踪基本面和技术面变化
-                        """)
-                    
-                    # 2. 期权策略推荐（所有评级都显示）
-                    if ticker:
+                        
+                        # 期权策略推荐（所有情况都显示）
                         st.markdown("---")
                         st.subheader("📊 期权策略推荐（进阶）")
                         
-                        # 根据评级给出提示
                         if rating == 'Hold':
                             st.caption("💡 虽然当前建议持有，但如果你已持有股票，可以考虑备兑开仓等策略增强收益")
                         else:
@@ -645,9 +548,11 @@ else:
         - 最近GOOGL的新闻如何？
         - 市场对META的看法
         
-        **投资决策（生成策略）**
-        - NVDA值得买入吗？
-        - 苹果股票现在可以买吗？
+        **股票对比**
+        - 比较AAPL和MSFT
+        - NVDA vs AMD 哪个更好？
+        
+        **💡 所有查询都会生成可追踪的交易策略！**
         """)
 
 # 页面底部信息

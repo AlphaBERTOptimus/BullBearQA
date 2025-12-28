@@ -305,3 +305,262 @@ if api_key:
                         with st.spinner(progress_text):
                             output = selected_agent.run(prompt)
                             agent_out
+output = selected_agent.run(prompt)
+                            agent_outputs[agent_type] = output
+                    
+                    # 3. 如果是对比，可能需要多个 agent
+                    if agent_type == 'comparison' and len(routing_result.get('tickers', [])) >= 2:
+                        # 对比分析已经在 comparison_agent 中完成
+                        pass
+                    
+                    # 4. Arena Judge 综合
+                    with st.spinner("🤔 正在生成综合分析..."):
+                        final_response = judge.synthesize(prompt, agent_outputs)
+                    
+                    # 5. 创建投资评分
+                    score_data = judge.create_investment_score(agent_outputs)
+                    st.session_state.last_score = score_data
+                    
+                    # 提取rating用于策略生成
+                    rating = score_data.get('rating', 'Hold')
+                    
+                    # 计算执行时间
+                    execution_time = time.time() - start_time
+                    
+                    # 显示最终结果
+                    response_text = final_response
+                    if show_timing:
+                        response_text += f"\n\n⏱️ 执行时间: {execution_time:.2f}秒"
+                    
+                    message_placeholder.markdown(response_text)
+                    
+                    # 保存到对话历史
+                    st.session_state.messages.append({"role": "assistant", "content": response_text})
+                    
+                    # ========== 🔥 修改点：无论什么rating都显示策略 ==========
+                    
+                    # 只要有ticker，就生成策略
+                    if ticker:
+                        st.markdown("---")
+                        st.subheader("📋 可执行交易策略")
+                        
+                        # 显示当前评级
+                        rating_emoji = {
+                            'Buy': '🟢',
+                            'Sell': '🔴',
+                            'Hold': '🟡'
+                        }
+                        st.info(f"{rating_emoji.get(rating, '🟡')} **当前评级: {rating}**")
+                        
+                        # 用户选择风险偏好
+                        col1, col2 = st.columns([3, 1])
+                        with col1:
+                            risk_tolerance = st.select_slider(
+                                "风险偏好",
+                                options=["low", "medium", "high"],
+                                value="medium",
+                                format_func=lambda x: {"low": "🐌 保守", "medium": "🎯 平衡", "high": "🚀 激进"}[x],
+                                key=f"risk_{ticker}_{time.time()}"
+                            )
+                        
+                        # 🔥 关键：强制设置rating为Buy或Sell（用于生成策略）
+                        # 如果是Hold，默认生成Buy策略（用户可以选择不保存）
+                        strategy_rating = rating if rating in ['Buy', 'Sell'] else 'Buy'
+                        
+                        # 生成策略
+                        strategy = components['strategy_generator'].generate_strategy(
+                            ticker=ticker,
+                            rating=strategy_rating,  # 使用修正后的rating
+                            analysis_result=agent_outputs,
+                            risk_tolerance=risk_tolerance
+                        )
+                        
+                        if strategy:
+                            # 如果原始rating是Hold，给出提示
+                            if rating == 'Hold':
+                                st.warning("💡 **注意**: 当前评级为Hold，以下策略仅供参考。如果你决定交易，建议谨慎操作。")
+                            
+                            # 显示策略
+                            st.success(f"✅ 已生成 {strategy['action']} 策略")
+                            
+                            # 关键指标
+                            col1, col2, col3, col4 = st.columns(4)
+                            
+                            with col1:
+                                st.metric("入场价", f"${strategy['entry_price']:.2f}")
+                            with col2:
+                                gain = ((strategy['target_price']/strategy['entry_price']-1)*100)
+                                st.metric("目标价", f"${strategy['target_price']:.2f}", 
+                                         delta=f"+{gain:.1f}%", delta_color="normal")
+                            with col3:
+                                loss = ((1-strategy['stop_loss']/strategy['entry_price'])*100)
+                                st.metric("止损价", f"${strategy['stop_loss']:.2f}", 
+                                         delta=f"-{loss:.1f}%", delta_color="inverse")
+                            with col4:
+                                st.metric("建议仓位", strategy['position_size'])
+                            
+                            # 策略详情
+                            with st.expander("📊 策略详情", expanded=True):
+                                col1, col2 = st.columns(2)
+                                
+                                with col1:
+                                    st.write("**风险回报比**")
+                                    st.info(f"1 : {strategy['risk_reward_ratio']}")
+                                    
+                                    st.write("**持仓周期**")
+                                    st.info(strategy['time_horizon'])
+                                
+                                with col2:
+                                    st.write("**策略理由**")
+                                    st.info(strategy['reason'])
+                                    
+                                    st.write("**信心度**")
+                                    confidence = strategy['confidence']
+                                    st.progress(confidence)
+                                    st.caption(f"{confidence*100:.0f}%")
+                            
+                            # 可复制的交易订单
+                            st.write("**📝 交易订单（可复制）**")
+                            order_text = f"""
+交易订单
+━━━━━━━━━━━━━━━━━━
+股票代码: {strategy['ticker']}
+操作: {strategy['action']}
+评级: {rating}
+
+入场价: ${strategy['entry_price']:.2f}
+目标价: ${strategy['target_price']:.2f} (+{strategy['expected_gain_pct']}%)
+止损价: ${strategy['stop_loss']:.2f} (-{strategy['max_loss_pct']}%)
+
+建议仓位: {strategy['position_size']}
+风险回报比: 1:{strategy['risk_reward_ratio']}
+持仓周期: {strategy['time_horizon']}
+
+理由: {strategy['reason']}
+                            """
+                            st.code(order_text, language="text")
+                            
+                            # 💾 保存到模拟盘按钮（这就是你要找的！）
+                            col1, col2 = st.columns([1, 3])
+                            with col1:
+                                if st.button("💾 保存到模拟盘", type="primary", key=f"save_{ticker}_{time.time()}"):
+                                    trade_id = tracker.add_trade(strategy)
+                                    st.success(f"✅ 已保存（编号 #{trade_id}）")
+                                    st.balloons()
+                                    # 触发侧边栏更新
+                                    st.rerun()
+                            with col2:
+                                st.caption("💡 保存后可在侧边栏查看交易记录和追踪盈亏")
+                        else:
+                            st.warning("⚠️ 策略生成失败，可能是获取价格数据失败，请稍后重试")
+                        
+                        # 期权策略推荐（所有情况都显示）
+                        st.markdown("---")
+                        st.subheader("📊 期权策略推荐（进阶）")
+                        
+                        if rating == 'Hold':
+                            st.caption("💡 虽然当前建议持有，但如果你已持有股票，可以考虑备兑开仓等策略增强收益")
+                        else:
+                            st.caption("💡 如果你了解期权，可以考虑以下策略")
+                        
+                        # 用户选择波动率
+                        volatility = st.select_slider(
+                            "当前波动率",
+                            options=["low", "medium", "high"],
+                            value="medium",
+                            format_func=lambda x: {"low": "📉 低波动", "medium": "📊 中等", "high": "📈 高波动"}[x],
+                            key=f"vol_{ticker}_{time.time()}"
+                        )
+                        
+                        # 推荐策略
+                        options_strategies = components['options_recommender'].recommend_strategies(
+                            ticker=ticker,
+                            rating=rating,
+                            volatility=volatility
+                        )
+                        
+                        # 显示策略
+                        for i, strategy_opt in enumerate(options_strategies, 1):
+                            with st.expander(f"{strategy_opt['name']} - 复杂度: {strategy_opt['complexity']}", expanded=(i==1 and rating=='Hold')):
+                                col1, col2 = st.columns(2)
+                                
+                                with col1:
+                                    st.write("**基本信息**")
+                                    st.write(f"适合场景: {strategy_opt['适合场景']}")
+                                    st.write(f"风险: {strategy_opt['风险']}")
+                                    st.write(f"收益: {strategy_opt['收益']}")
+                                    st.write(f"成本: {strategy_opt['成本']}")
+                                
+                                with col2:
+                                    st.write("**推荐度**")
+                                    st.write(strategy_opt['推荐度'])
+                                    
+                                    if '⚠️ 风险提示' in strategy_opt:
+                                        st.warning(strategy_opt['⚠️ 风险提示'])
+                                    elif '💡 提示' in strategy_opt:
+                                        st.info(strategy_opt['💡 提示'])
+                                
+                                st.write("**策略说明**")
+                                st.info(strategy_opt['说明'])
+                                
+                                if strategy_opt.get('优点'):
+                                    st.write("**优点**")
+                                    for pro in strategy_opt['优点']:
+                                        st.write(f"✅ {pro}")
+                                
+                                if strategy_opt.get('缺点'):
+                                    st.write("**缺点**")
+                                    for con in strategy_opt['缺点']:
+                                        st.write(f"⚠️ {con}")
+                    
+                    # ========== Phase 1 功能结束 ==========
+                    
+                except Exception as e:
+                    error_message = f"❌ 处理过程中出现错误: {str(e)}"
+                    message_placeholder.error(error_message)
+                    st.session_state.messages.append({"role": "assistant", "content": error_message})
+    
+    except Exception as e:
+        st.error(f"❌ 初始化组件失败: {str(e)}")
+        st.info("💡 请检查 API Key 是否正确，或稍后重试。")
+
+else:
+    # 未设置 API Key 的提示
+    st.info("👈 请在左侧侧边栏输入你的 DeepSeek API Key 以开始使用")
+    
+    # 示例问题
+    st.markdown("### 💡 示例问题")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("""
+        **基本面分析**
+        - AAPL的PE怎么样？
+        - 分析TSLA的财务状况
+        
+        **技术面分析**
+        - NVDA的RSI是多少？
+        - MSFT的技术指标如何？
+        """)
+    
+    with col2:
+        st.markdown("""
+        **市场情绪**
+        - 最近GOOGL的新闻如何？
+        - 市场对META的看法
+        
+        **股票对比**
+        - 比较AAPL和MSFT
+        - NVDA vs AMD 哪个更好？
+        
+        **💡 所有查询都会生成可追踪的交易策略！**
+        """)
+
+# 页面底部信息
+st.markdown("---")
+st.markdown("""
+<div style='text-align: center; color: #666;'>
+    <p>⚠️ 免责声明：本平台提供的分析仅供参考，不构成投资建议。投资有风险，入市需谨慎。</p>
+    <p>🔗 <a href='https://github.com/xiangxiang66/BullBearQA' target='_blank'>GitHub 项目地址</a> | Powered by DeepSeek & LangChain</p>
+</div>
+""", unsafe_allow_html=True)

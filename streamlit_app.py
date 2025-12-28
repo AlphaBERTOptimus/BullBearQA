@@ -410,17 +410,17 @@ if api_key:
                     
                     # 🆕 使用增强的文本提取
                     rating = extract_rating_from_text(final_response)
-                    
+
                     # 计算执行时间
                     execution_time = time.time() - start_time
-                    
+
                     # 显示最终结果
                     response_text = final_response
                     if show_timing:
-                        response_text += f"\n\n⏱️ 执行时间: {execution_time:.2f}秒"
-                    
+                    response_text += f"\n\n⏱️ 执行时间: {execution_time:.2f}秒"
+
                     message_placeholder.markdown(response_text)
-                    
+
                     # 保存到对话历史
                     st.session_state.messages.append({"role": "assistant", "content": response_text})
                     

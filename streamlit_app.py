@@ -12,6 +12,7 @@ import time
 from trading.strategy_generator import StrategyGenerator
 from trading.options_recommender import OptionsRecommender
 from trading.paper_trading import PaperTradingTracker
+from visualization.candlestick_chart import CandlestickChart
 # ========================================
 
 # 页面配置
@@ -264,6 +265,7 @@ if api_key:
                     agent_outputs = {}
                     tickers = routing_result.get('tickers', [])
                     ticker = tickers[0] if tickers else None
+                    
                     agents_map = {
                         'fundamental': fundamental_agent,
                         'technical': technical_agent,
@@ -296,6 +298,74 @@ if api_key:
                     
                     message_placeholder.markdown(response_text)
                     st.session_state.messages.append({"role": "assistant", "content": response_text})
+                    
+                    # ========== 📈 新增：K线图可视化 ==========
+                    if ticker:
+                        st.markdown("---")
+                        st.markdown("## 📈 股价走势分析")
+                        
+                        chart_generator = CandlestickChart()
+                        
+                        col1, col2, col3 = st.columns([2, 1, 1])
+                        
+                        with col1:
+                            chart_period = st.selectbox(
+                                "📅 选择时间周期",
+                                options=["1mo", "3mo", "6mo", "1y", "2y", "5y"],
+                                index=1,
+                                format_func=lambda x: {
+                                    "1mo": "1个月",
+                                    "3mo": "3个月", 
+                                    "6mo": "6个月",
+                                    "1y": "1年",
+                                    "2y": "2年",
+                                    "5y": "5年"
+                                }[x],
+                                key=f"chart_period_{ticker}_{time.time()}"
+                            )
+                        
+                        with col2:
+                            price_info = chart_generator.get_price_change(ticker)
+                            if price_info:
+                                change_color = "normal" if price_info['change'] >= 0 else "inverse"
+                                st.metric(
+                                    "当前价格", 
+                                    f"${price_info['current_price']:.2f}",
+                                    delta=f"{price_info['change_pct']:+.2f}%",
+                                    delta_color=change_color
+                                )
+                        
+                        with col3:
+                            if price_info:
+                                st.metric(
+                                    "52周区间",
+                                    f"${price_info['low_52w']:.1f}",
+                                    delta=f"${price_info['high_52w']:.1f}"
+                                )
+                        
+                        with st.spinner("🎨 正在生成K线图..."):
+                            fig = chart_generator.create_chart(ticker, chart_period)
+                        
+                        if fig:
+                            st.plotly_chart(fig, use_container_width=True)
+                            
+                            with st.expander("📊 图表说明", expanded=False):
+                                st.markdown("""
+**K线图说明：**
+- 🟢 **绿色K线**：当日收盘价高于开盘价（上涨）
+- 🔴 **红色K线**：当日收盘价低于开盘价（下跌）
+- 🟠 **橙色线条（MA20）**：20日移动平均线，反映短期趋势
+- 🟣 **紫色线条（MA50）**：50日移动平均线，反映中期趋势
+- 📊 **底部柱状图**：成交量，颜色与K线对应
+
+**如何使用：**
+- 🖱️ 鼠标悬停查看详细数据
+- 🔍 拖动选择区域放大
+- 📌 双击重置视图
+                                """)
+                        else:
+                            st.warning("⚠️ 无法获取股价数据，请稍后重试或检查股票代码")
+                    # ========== K线图功能结束 ==========
                     
                     if ticker:
                         st.markdown("---")
@@ -475,6 +545,6 @@ st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666;'>
     <p>⚠️ 免责声明：本平台提供的分析仅供参考，不构成投资建议。投资有风险，入市需谨慎。</p>
-    <p>🔗 <a href='https://github.com/xiangxiang66/BullBearQA' target='_blank'>GitHub 项目地址</a> | Powered by DeepSeek & LangChain</p>
+    <p>🔗 <a href='https://github.com/AlphaBERTOptimus/BullBearQA' target='_blank'>GitHub 项目地址</a> | Powered by DeepSeek & LangChain</p>
 </div>
 """, unsafe_allow_html=True)

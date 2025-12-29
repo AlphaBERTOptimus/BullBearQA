@@ -299,20 +299,20 @@ if api_key:
                     message_placeholder.markdown(response_text)
                     st.session_state.messages.append({"role": "assistant", "content": response_text})
                     
-                    # ========== 📈 新增：K线图可视化 ==========
-                    if ticker:
+                    # ========== 📈 K线图可视化（支持单个和对比） ==========
+                    if ticker or len(tickers) >= 2:
                         st.markdown("---")
-                        st.markdown("## 📈 股价走势分析")
                         
                         chart_generator = CandlestickChart()
                         
-                        col1, col2, col3 = st.columns([2, 1, 1])
-                        
-                        with col1:
+                        # 对比查询（多个股票）
+                        if len(tickers) >= 2:
+                            st.markdown("## 📈 股票走势对比")
+                            
                             chart_period = st.selectbox(
                                 "📅 选择时间周期",
                                 options=["1mo", "3mo", "6mo", "1y", "2y", "5y"],
-                                index=1,
+                                index=3,
                                 format_func=lambda x: {
                                     "1mo": "1个月",
                                     "3mo": "3个月", 
@@ -321,36 +321,89 @@ if api_key:
                                     "2y": "2年",
                                     "5y": "5年"
                                 }[x],
-                                key=f"chart_period_{ticker}_{time.time()}"
+                                key=f"chart_period_compare_{time.time()}"
                             )
-                        
-                        with col2:
-                            price_info = chart_generator.get_price_change(ticker)
-                            if price_info:
-                                change_color = "normal" if price_info['change'] >= 0 else "inverse"
-                                st.metric(
-                                    "当前价格", 
-                                    f"${price_info['current_price']:.2f}",
-                                    delta=f"{price_info['change_pct']:+.2f}%",
-                                    delta_color=change_color
-                                )
-                        
-                        with col3:
-                            if price_info:
-                                st.metric(
-                                    "52周区间",
-                                    f"${price_info['low_52w']:.1f}",
-                                    delta=f"${price_info['high_52w']:.1f}"
-                                )
-                        
-                        with st.spinner("🎨 正在生成K线图..."):
-                            fig = chart_generator.create_chart(ticker, chart_period)
-                        
-                        if fig:
-                            st.plotly_chart(fig, use_container_width=True)
                             
-                            with st.expander("📊 图表说明", expanded=False):
-                                st.markdown("""
+                            with st.spinner("🎨 正在生成对比图..."):
+                                fig = chart_generator.create_comparison_chart(tickers, chart_period)
+                            
+                            if fig:
+                                st.plotly_chart(fig, use_container_width=True)
+                                
+                                st.markdown("### 📊 当前价格对比")
+                                cols = st.columns(len(tickers))
+                                for i, t in enumerate(tickers):
+                                    price_info = chart_generator.get_price_change(t)
+                                    if price_info:
+                                        with cols[i]:
+                                            change_color = "normal" if price_info['change'] >= 0 else "inverse"
+                                            st.metric(
+                                                t,
+                                                f"${price_info['current_price']:.2f}",
+                                                delta=f"{price_info['change_pct']:+.2f}%",
+                                                delta_color=change_color
+                                            )
+                                
+                                with st.expander("📊 图表说明", expanded=False):
+                                    st.markdown("""
+**对比图说明：**
+- 📈 所有股票以第一天价格为基准（100%）归一化
+- 可以直观看出哪只股票涨幅更大
+- 🖱️ 鼠标悬停查看具体涨跌幅
+- 🔍 拖动选择区域放大查看细节
+                                    """)
+                            else:
+                                st.warning("⚠️ 无法获取对比数据")
+                        
+                        # 单个股票查询
+                        elif ticker:
+                            st.markdown("## 📈 股价走势分析")
+                            
+                            col1, col2, col3 = st.columns([2, 1, 1])
+                            
+                            with col1:
+                                chart_period = st.selectbox(
+                                    "📅 选择时间周期",
+                                    options=["1mo", "3mo", "6mo", "1y", "2y", "5y"],
+                                    index=1,
+                                    format_func=lambda x: {
+                                        "1mo": "1个月",
+                                        "3mo": "3个月", 
+                                        "6mo": "6个月",
+                                        "1y": "1年",
+                                        "2y": "2年",
+                                        "5y": "5年"
+                                    }[x],
+                                    key=f"chart_period_{ticker}_{time.time()}"
+                                )
+                            
+                            with col2:
+                                price_info = chart_generator.get_price_change(ticker)
+                                if price_info:
+                                    change_color = "normal" if price_info['change'] >= 0 else "inverse"
+                                    st.metric(
+                                        "当前价格", 
+                                        f"${price_info['current_price']:.2f}",
+                                        delta=f"{price_info['change_pct']:+.2f}%",
+                                        delta_color=change_color
+                                    )
+                            
+                            with col3:
+                                if price_info:
+                                    st.metric(
+                                        "52周区间",
+                                        f"${price_info['low_52w']:.1f}",
+                                        delta=f"${price_info['high_52w']:.1f}"
+                                    )
+                            
+                            with st.spinner("🎨 正在生成K线图..."):
+                                fig = chart_generator.create_chart(ticker, chart_period)
+                            
+                            if fig:
+                                st.plotly_chart(fig, use_container_width=True)
+                                
+                                with st.expander("📊 图表说明", expanded=False):
+                                    st.markdown("""
 **K线图说明：**
 - 🟢 **绿色K线**：当日收盘价高于开盘价（上涨）
 - 🔴 **红色K线**：当日收盘价低于开盘价（下跌）
@@ -362,9 +415,9 @@ if api_key:
 - 🖱️ 鼠标悬停查看详细数据
 - 🔍 拖动选择区域放大
 - 📌 双击重置视图
-                                """)
-                        else:
-                            st.warning("⚠️ 无法获取股价数据，请稍后重试或检查股票代码")
+                                    """)
+                            else:
+                                st.warning("⚠️ 无法获取股价数据，请稍后重试或检查股票代码")
                     # ========== K线图功能结束 ==========
                     
                     if ticker:

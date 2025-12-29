@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from langchain.agents import create_tool_calling_agent, AgentExecutor
 from langchain_core.prompts import ChatPromptTemplate
 

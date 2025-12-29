@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from agents.base_agent import BaseAgent
 from tools.comparison_tool import ComparisonTool
 

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from agents.base_agent import BaseAgent
 from tools.news_search_tool import NewsSearchTool
 

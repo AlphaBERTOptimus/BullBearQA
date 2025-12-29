@@ -1,3 +1,4 @@
+# Version: 2.1.0 - Fixed: K-line chart display & save strategy bugs
 import streamlit as st
 from langchain_openai import ChatOpenAI
 from agents.fundamental_agent import FundamentalAgent
@@ -299,14 +300,15 @@ if api_key:
                     message_placeholder.markdown(response_text)
                     st.session_state.messages.append({"role": "assistant", "content": response_text})
                     
-                    # ========== 📈 K线图可视化（支持单个和对比） ==========
-                    if ticker or len(tickers) >= 2:
+                    # ========== 📈 K线图可视化（BUG修复：改进条件判断） ==========
+                    # BUG FIX: 修改条件，确保单个股票也能显示K线图
+                    if ticker or (tickers and len(tickers) >= 2):
                         st.markdown("---")
                         
                         chart_generator = CandlestickChart()
                         
-                        # 对比查询（多个股票）
-                        if len(tickers) >= 2:
+                        # 情况1: 对比查询（多个股票）
+                        if tickers and len(tickers) >= 2:
                             st.markdown("## 📈 股票走势对比")
                             
                             chart_period = st.selectbox(
@@ -355,7 +357,7 @@ if api_key:
                             else:
                                 st.warning("⚠️ 无法获取对比数据")
                         
-                        # 单个股票查询
+                        # 情况2: 单个股票查询
                         elif ticker:
                             st.markdown("## 📈 股价走势分析")
                             
@@ -498,15 +500,18 @@ if api_key:
                             """
                             st.code(order_text, language="text")
                             
+                            # ========== BUG修复：移除 st.rerun() 避免页面刷新导致内容消失 ==========
                             col1, col2 = st.columns([1, 3])
                             with col1:
                                 if st.button("💾 保存到模拟盘", type="primary", key=f"save_{ticker}_{time.time()}"):
                                     trade_id = tracker.add_trade(strategy)
-                                    st.success(f"✅ 已保存（编号 #{trade_id}）")
+                                    st.success(f"✅ 已保存到模拟盘（交易编号 #{trade_id}）")
                                     st.balloons()
-                                    st.rerun()
+                                    # BUG FIX: 移除 st.rerun() - 让用户看到保存成功信息，不刷新页面
+                                    st.info("💡 请在侧边栏勾选「查看交易记录」查看已保存的策略")
                             with col2:
                                 st.caption("💡 保存后可在侧边栏查看交易记录和追踪盈亏")
+                            # ========== BUG修复结束 ==========
                         else:
                             st.warning("⚠️ 策略生成失败，可能是获取价格数据失败，请稍后重试")
                         

@@ -1,14 +1,30 @@
 # -*- coding: utf-8 -*-
-from langchain.agents import create_tool_calling_agent, AgentExecutor
-from langchain_core.prompts import ChatPromptTemplate
 import sys
 import io
 
-# 确保标准输出使用 UTF-8 编码
-if hasattr(sys.stdout, 'buffer'):
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-if hasattr(sys.stderr, 'buffer'):
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+# ============================================
+# 强制设置 UTF-8 编码（必须在最开头）
+# ============================================
+if sys.version_info[0] >= 3:
+    # 重新包装 stdout 和 stderr
+    if hasattr(sys.stdout, 'buffer'):
+        sys.stdout = io.TextIOWrapper(
+            sys.stdout.buffer, 
+            encoding='utf-8', 
+            errors='replace',
+            line_buffering=True
+        )
+    if hasattr(sys.stderr, 'buffer'):
+        sys.stderr = io.TextIOWrapper(
+            sys.stderr.buffer, 
+            encoding='utf-8', 
+            errors='replace',
+            line_buffering=True
+        )
+
+from langchain.agents import create_tool_calling_agent, AgentExecutor
+from langchain_core.prompts import ChatPromptTemplate
+
 
 class BaseAgent:
     """Agent 基类"""
@@ -62,28 +78,51 @@ class BaseAgent:
     def run(self, question: str) -> str:
         """运行 agent"""
         try:
+            # 确保输入是正确的字符串
+            if isinstance(question, bytes):
+                question = question.decode('utf-8', errors='replace')
+            
             result = self.agent_executor.invoke({
                 "input": question,
                 "chat_history": []
             })
+            
+            # 安全地获取输出
             output = result.get("output", "抱歉，无法生成回答。")
-            # 确保返回的是字符串
+            
+            # 确保输出是字符串并正确编码
+            if isinstance(output, bytes):
+                output = output.decode('utf-8', errors='replace')
+            
             return str(output)
             
         except Exception as e:
-            # 安全地处理错误信息
+            # 安全地处理异常
+            return self._safe_error_message(e)
+    
+    def _safe_error_message(self, error) -> str:
+        """安全地生成错误消息（避免编码问题）"""
+        try:
+            error_str = str(error)
+        except:
             try:
-                error_msg = str(e)
+                error_str = repr(error)
             except:
-                error_msg = repr(e)
-            
-            # 使用更安全的字符串处理方式
-            error_msg_lower = error_msg.lower() if error_msg else ""
-            
-            if "rate limit" in error_msg_lower:
-                return "⚠️ API 请求过于频繁，请稍后再试（建议等待 1 分钟）"
-            elif "invalid" in error_msg_lower or "not found" in error_msg_lower:
-                return f"❌ 遇到错误：{error_msg}"
-            else:
-                # 使用 repr() 避免编码问题
-                return f"❌ 处理过程中出现错误：{error_msg}"
+                error_str = "未知错误"
+        
+        # 检查错误类型
+        error_lower = error_str.lower()
+        
+        if "rate limit" in error_lower:
+            msg = "API 请求过于频繁，请稍后再试（建议等待 1 分钟）"
+        elif "invalid" in error_lower or "not found" in error_lower:
+            msg = f"遇到错误：{error_str}"
+        else:
+            msg = f"处理过程中出现错误：{error_str}"
+        
+        # 使用 ASCII 安全的前缀
+        try:
+            return f"⚠️ {msg}"
+        except:
+            # 如果连 emoji 都有问题，使用纯文本
+            return f"[错误] {msg}"

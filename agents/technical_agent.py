@@ -15,73 +15,50 @@ class TechnicalAgent(BaseAgent):
         try:
             ticker = self._extract_ticker(query)
             if not ticker:
-                return "❌ 无法识别股票代码"
+                return "无法识别股票代码"
             
             # 获取历史数据
             stock = yf.Ticker(ticker)
             df = stock.history(period="1y")
             
             if df.empty:
-                return f"❌ 无法获取 {ticker} 的历史数据"
+                return f"无法获取 {ticker} 的历史数据"
             
             # 计算技术指标
             indicators = self._calculate_indicators(df)
             signals = self._generate_signals(indicators)
             
-            # 使用 LLM 生成分析
-            analysis_prompt = f"""
-你是一位专业的技术分析师。请基于以下技术指标对 {ticker} 进行分析：
-
-**价格信息：**
-- 当前价格: ${indicators['current_price']:.2f}
-- 20日均线: ${indicators.get('sma_20', 'N/A')}
-- 50日均线: ${indicators.get('sma_50', 'N/A')}
-- 200日均线: ${indicators.get('sma_200', 'N/A')}
-
-**动量指标：**
-- RSI(14): {indicators.get('rsi', 'N/A')} - {signals.get('rsi', 'N/A')}
-- MACD: {indicators.get('macd', 'N/A')} - {signals.get('macd', 'N/A')}
-
-**趋势信号：**
-- 整体趋势: {signals.get('trend', 'N/A')}
-
-**布林带：**
-- 上轨: ${indicators.get('bb_upper', 'N/A')}
-- 下轨: ${indicators.get('bb_lower', 'N/A')}
-
-请提供：
-1. 技术面综合评价
-2. 短期走势预判
-3. 关键支撑位和阻力位
-4. 交易建议
-
-保持专业但易懂的语言。
-            """
+            # 构建提示词
+            prompt = self._build_analysis_prompt(ticker, indicators, signals)
             
-            response = self.llm.invoke(analysis_prompt)
-            return response.content
+            # 调用LLM
+            return self._safe_llm_invoke(prompt)
             
         except Exception as e:
-            return f"❌ 技术分析失败: {str(e)}"
+            return f"技术分析失败: {str(e)}"
     
     def _extract_ticker(self, query: str) -> str:
         """提取股票代码"""
         import re
+        
         common_stocks = {
             'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA',
-            'AMD', 'NFLX', 'TSM', 'V', 'JPM'
+            'AMD', 'NFLX', 'TSM', 'V', 'JPM', 'BABA'
         }
         
         query_upper = query.upper()
+        
         for stock in common_stocks:
             if stock in query_upper:
                 return stock
         
         matches = re.findall(r'\b([A-Z]{2,5})\b', query_upper)
-        common_words = {'THE', 'RSI', 'PE', 'VS'}
+        common_words = {'THE', 'RSI', 'PE', 'VS', 'HOW'}
+        
         for match in matches:
             if match not in common_words:
                 return match
+        
         return None
     
     def _calculate_indicators(self, df: pd.DataFrame) -> dict:
@@ -113,15 +90,15 @@ class TechnicalAgent(BaseAgent):
         bb_lower = bb_middle - (2 * bb_std)
         
         return {
-            "current_price": close.iloc[-1],
-            "sma_20": sma_20.iloc[-1] if not pd.isna(sma_20.iloc[-1]) else None,
-            "sma_50": sma_50.iloc[-1] if not pd.isna(sma_50.iloc[-1]) else None,
-            "sma_200": sma_200.iloc[-1] if not pd.isna(sma_200.iloc[-1]) else None,
-            "rsi": rsi.iloc[-1] if not pd.isna(rsi.iloc[-1]) else None,
-            "macd": macd.iloc[-1] if not pd.isna(macd.iloc[-1]) else None,
-            "macd_signal": signal.iloc[-1] if not pd.isna(signal.iloc[-1]) else None,
-            "bb_upper": bb_upper.iloc[-1] if not pd.isna(bb_upper.iloc[-1]) else None,
-            "bb_lower": bb_lower.iloc[-1] if not pd.isna(bb_lower.iloc[-1]) else None,
+            "current_price": float(close.iloc[-1]),
+            "sma_20": float(sma_20.iloc[-1]) if not pd.isna(sma_20.iloc[-1]) else None,
+            "sma_50": float(sma_50.iloc[-1]) if not pd.isna(sma_50.iloc[-1]) else None,
+            "sma_200": float(sma_200.iloc[-1]) if not pd.isna(sma_200.iloc[-1]) else None,
+            "rsi": float(rsi.iloc[-1]) if not pd.isna(rsi.iloc[-1]) else None,
+            "macd": float(macd.iloc[-1]) if not pd.isna(macd.iloc[-1]) else None,
+            "macd_signal": float(signal.iloc[-1]) if not pd.isna(signal.iloc[-1]) else None,
+            "bb_upper": float(bb_upper.iloc[-1]) if not pd.isna(bb_upper.iloc[-1]) else None,
+            "bb_lower": float(bb_lower.iloc[-1]) if not pd.isna(bb_lower.iloc[-1]) else None,
         }
     
     def _generate_signals(self, indicators: dict) -> dict:
@@ -148,3 +125,35 @@ class TechnicalAgent(BaseAgent):
             signals['macd'] = "看涨" if macd > macd_signal else "看跌"
         
         return signals
+    
+    def _build_analysis_prompt(self, ticker: str, indicators: dict, signals: dict) -> str:
+        """构建分析提示词"""
+        sma_20 = indicators.get('sma_20')
+        sma_50 = indicators.get('sma_50')
+        sma_200 = indicators.get('sma_200')
+        
+        return f"""你是专业的技术分析师。请对 {ticker} 进行简明的技术分析。
+
+价格信息:
+- 当前价格: ${indicators['current_price']:.2f}
+- 20日均线: ${sma_20:.2f if sma_20 else 'N/A'}
+- 50日均线: ${sma_50:.2f if sma_50 else 'N/A'}
+- 200日均线: ${sma_200:.2f if sma_200 else 'N/A'}
+
+动量指标:
+- RSI(14): {indicators.get('rsi', 'N/A')} - {signals.get('rsi', 'N/A')}
+- MACD: {signals.get('macd', 'N/A')}
+
+趋势: {signals.get('trend', 'N/A')}
+
+布林带:
+- 上轨: ${indicators.get('bb_upper', 'N/A')}
+- 下轨: ${indicators.get('bb_lower', 'N/A')}
+
+请提供简洁分析(控制在150字以内):
+1. 技术面综合评价
+2. 短期走势预判
+3. 关键支撑位和阻力位
+4. 交易建议
+
+用专业但易懂的中文回答。"""

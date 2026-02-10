@@ -1,4 +1,35 @@
-# Version: 2.1.0 - Fixed: K-line chart display & save strategy bugs
+# -*- coding: utf-8 -*-
+# Version: 2.2.0 - Fixed encoding issues
+
+# ============================================
+# 强制 UTF-8 编码设置（必须在所有 import 之前）
+# ============================================
+import sys
+import io
+import os
+
+# 强制设置标准输出编码为 UTF-8
+if hasattr(sys.stdout, 'buffer'):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+if hasattr(sys.stderr, 'buffer'):
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+
+# 设置默认编码
+os.environ['PYTHONIOENCODING'] = 'utf-8'
+os.environ['LANG'] = 'en_US.UTF-8'
+os.environ['LC_ALL'] = 'en_US.UTF-8'
+
+# 如果在 Windows 上，额外设置
+if sys.platform.startswith('win'):
+    try:
+        import locale
+        locale.setlocale(locale.LC_ALL, '')
+    except:
+        pass
+
+# ============================================
+# 正常的导入
+# ============================================
 import streamlit as st
 from langchain_openai import ChatOpenAI
 from agents.fundamental_agent import FundamentalAgent
@@ -8,15 +39,17 @@ from agents.comparison_agent import ComparisonAgent
 from router.question_router import QuestionRouter
 from judge.arena_judge import ArenaJudge
 import time
+import traceback
 
-# ========== Phase 1: 新增导入 ==========
+# Phase 1: 新增导入
 from trading.strategy_generator import StrategyGenerator
 from trading.options_recommender import OptionsRecommender
 from trading.paper_trading import PaperTradingTracker
 from visualization.candlestick_chart import CandlestickChart
-# ========================================
 
+# ============================================
 # 页面配置
+# ============================================
 st.set_page_config(
     page_title="BullBearQA - 智能股票分析",
     page_icon="📊",
@@ -69,7 +102,9 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# 侧边栏
+# ============================================
+# 侧边栏配置
+# ============================================
 with st.sidebar:
     st.markdown("## 🔐 配置")
     
@@ -127,6 +162,8 @@ BullBearQA 支持以下类型的问题：
         st.rerun()
     
     st.markdown("---")
+    
+    # 投资评分
     st.markdown("### 💡 投资评分")
     if 'last_score' in st.session_state:
         score_data = st.session_state.last_score
@@ -146,7 +183,9 @@ BullBearQA 支持以下类型的问题：
             for key, value in breakdown.items():
                 st.text(f"{key}: {value:+d}")
     
-    # ========== Phase 1: 侧边栏添加模拟交易追踪 ==========
+    # ============================================
+    # 模拟交易追踪
+    # ============================================
     st.markdown("---")
     st.sidebar.subheader("📊 模拟交易追踪")
     
@@ -194,38 +233,46 @@ BullBearQA 支持以下类型的问题：
         else:
             st.sidebar.write("暂无记录")
 
+# ============================================
 # 初始化组件（带缓存）
+# ============================================
 @st.cache_resource
 def get_components(api_key: str):
     """初始化所有组件（带缓存）"""
-    llm = ChatOpenAI(
-        model="deepseek-chat",
-        openai_api_key=api_key,
-        openai_api_base="https://api.deepseek.com",
-        temperature=0.7
-    )
-    
-    router = QuestionRouter(llm)
-    fundamental_agent = FundamentalAgent(llm)
-    technical_agent = TechnicalAgent(llm)
-    sentiment_agent = SentimentAgent(llm)
-    comparison_agent = ComparisonAgent(llm)
-    judge = ArenaJudge(llm)
-    strategy_generator = StrategyGenerator()
-    options_recommender = OptionsRecommender()
-    
-    return {
-        'router': router,
-        'fundamental_agent': fundamental_agent,
-        'technical_agent': technical_agent,
-        'sentiment_agent': sentiment_agent,
-        'comparison_agent': comparison_agent,
-        'judge': judge,
-        'strategy_generator': strategy_generator,
-        'options_recommender': options_recommender
-    }
+    try:
+        llm = ChatOpenAI(
+            model="deepseek-chat",
+            openai_api_key=api_key,
+            openai_api_base="https://api.deepseek.com",
+            temperature=0.7
+        )
+        
+        router = QuestionRouter(llm)
+        fundamental_agent = FundamentalAgent(llm)
+        technical_agent = TechnicalAgent(llm)
+        sentiment_agent = SentimentAgent(llm)
+        comparison_agent = ComparisonAgent(llm)
+        judge = ArenaJudge(llm)
+        strategy_generator = StrategyGenerator()
+        options_recommender = OptionsRecommender()
+        
+        return {
+            'router': router,
+            'fundamental_agent': fundamental_agent,
+            'technical_agent': technical_agent,
+            'sentiment_agent': sentiment_agent,
+            'comparison_agent': comparison_agent,
+            'judge': judge,
+            'strategy_generator': strategy_generator,
+            'options_recommender': options_recommender
+        }
+    except Exception as e:
+        st.error(f"初始化组件失败: {str(e)}")
+        return None
 
+# ============================================
 # 初始化对话历史
+# ============================================
 if 'messages' not in st.session_state:
     st.session_state.messages = []
 
@@ -234,10 +281,17 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
+# ============================================
 # 主对话界面
+# ============================================
 if api_key:
     try:
         components = get_components(api_key)
+        
+        if components is None:
+            st.error("组件初始化失败，请检查 API Key 或网络连接")
+            st.stop()
+        
         router = components['router']
         fundamental_agent = components['fundamental_agent']
         technical_agent = components['technical_agent']
@@ -247,15 +301,18 @@ if api_key:
         tracker = st.session_state.paper_tracker
         
         if prompt := st.chat_input("请输入你的股票分析问题..."):
+            # 添加用户消息
             st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"):
                 st.markdown(prompt)
             
+            # 助手回复
             with st.chat_message("assistant"):
                 message_placeholder = st.empty()
                 start_time = time.time()
                 
                 try:
+                    # 1. 路由分析
                     with st.spinner("🎯 正在分析问题..."):
                         routing_result = router.route(prompt)
                     
@@ -267,6 +324,7 @@ if api_key:
                     tickers = routing_result.get('tickers', [])
                     ticker = tickers[0] if tickers else None
                     
+                    # 2. 执行相应的 Agent
                     agents_map = {
                         'fundamental': fundamental_agent,
                         'technical': technical_agent,
@@ -282,17 +340,17 @@ if api_key:
                             output = selected_agent.run(prompt)
                             agent_outputs[agent_type] = output
                     
-                    if agent_type == 'comparison' and len(routing_result.get('tickers', [])) >= 2:
-                        pass
-                    
+                    # 3. 生成综合分析
                     with st.spinner("🤔 正在生成综合分析..."):
                         final_response = judge.synthesize(prompt, agent_outputs)
                     
+                    # 4. 计算投资评分
                     score_data = judge.create_investment_score(agent_outputs)
                     st.session_state.last_score = score_data
                     rating = score_data.get('rating', 'Hold')
                     execution_time = time.time() - start_time
                     
+                    # 5. 显示回复
                     response_text = final_response
                     if show_timing:
                         response_text += f"\n\n⏱️ 执行时间: {execution_time:.2f}秒"
@@ -300,8 +358,9 @@ if api_key:
                     message_placeholder.markdown(response_text)
                     st.session_state.messages.append({"role": "assistant", "content": response_text})
                     
-                    # ========== 📈 K线图可视化（BUG修复：改进条件判断） ==========
-                    # BUG FIX: 修改条件，确保单个股票也能显示K线图
+                    # ============================================
+                    # 6. K线图可视化
+                    # ============================================
                     if ticker or (tickers and len(tickers) >= 2):
                         st.markdown("---")
                         
@@ -420,8 +479,10 @@ if api_key:
                                     """)
                             else:
                                 st.warning("⚠️ 无法获取股价数据，请稍后重试或检查股票代码")
-                    # ========== K线图功能结束 ==========
                     
+                    # ============================================
+                    # 7. 交易策略生成
+                    # ============================================
                     if ticker:
                         st.markdown("---")
                         st.subheader("📋 可执行交易策略")
@@ -481,8 +542,7 @@ if api_key:
                                     st.caption(f"{confidence*100:.0f}%")
                             
                             st.write("**📝 交易订单（可复制）**")
-                            order_text = f"""
-交易订单
+                            order_text = f"""交易订单
 ━━━━━━━━━━━━━━━━━━
 股票代码: {strategy['ticker']}
 操作: {strategy['action']}
@@ -496,25 +556,26 @@ if api_key:
 风险回报比: 1:{strategy['risk_reward_ratio']}
 持仓周期: {strategy['time_horizon']}
 
-理由: {strategy['reason']}
-                            """
+理由: {strategy['reason']}"""
+                            
                             st.code(order_text, language="text")
                             
-                            # ========== BUG修复：移除 st.rerun() 避免页面刷新导致内容消失 ==========
+                            # 保存到模拟盘
                             col1, col2 = st.columns([1, 3])
                             with col1:
                                 if st.button("💾 保存到模拟盘", type="primary", key=f"save_{ticker}_{time.time()}"):
                                     trade_id = tracker.add_trade(strategy)
                                     st.success(f"✅ 已保存到模拟盘（交易编号 #{trade_id}）")
                                     st.balloons()
-                                    # BUG FIX: 移除 st.rerun() - 让用户看到保存成功信息，不刷新页面
                                     st.info("💡 请在侧边栏勾选「查看交易记录」查看已保存的策略")
                             with col2:
                                 st.caption("💡 保存后可在侧边栏查看交易记录和追踪盈亏")
-                            # ========== BUG修复结束 ==========
                         else:
                             st.warning("⚠️ 策略生成失败，可能是获取价格数据失败，请稍后重试")
                         
+                        # ============================================
+                        # 8. 期权策略推荐
+                        # ============================================
                         st.markdown("---")
                         st.subheader("📊 期权策略推荐（进阶）")
                         
@@ -564,12 +625,22 @@ if api_key:
                     error_message = f"❌ 处理过程中出现错误: {str(e)}"
                     message_placeholder.error(error_message)
                     st.session_state.messages.append({"role": "assistant", "content": error_message})
+                    
+                    # 显示详细错误
+                    with st.expander("🔍 查看详细错误信息"):
+                        st.code(traceback.format_exc())
     
     except Exception as e:
         st.error(f"❌ 初始化组件失败: {str(e)}")
         st.info("💡 请检查 API Key 是否正确，或稍后重试。")
+        
+        with st.expander("🔍 查看详细错误"):
+            st.code(traceback.format_exc())
 
 else:
+    # ============================================
+    # 未输入 API Key 时的引导页面
+    # ============================================
     st.info("👈 请在左侧侧边栏输入你的 DeepSeek API Key 以开始使用")
     
     st.markdown("### 💡 示例问题")
@@ -599,6 +670,9 @@ else:
         **💡 所有查询都会生成可追踪的交易策略！**
         """)
 
+# ============================================
+# 页脚
+# ============================================
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666;'>

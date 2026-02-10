@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# BullBearQA - 简化版（不依赖 DeepSeek API）
+# BullBearQA - 简化版
 
 import sys
 import os
@@ -11,16 +11,12 @@ import time
 import traceback
 import re
 
-# ============================================
-# 页面配置
-# ============================================
 st.set_page_config(
     page_title="BullBearQA - 智能股票分析",
     page_icon="📊",
     layout="wide"
 )
 
-# 自定义 CSS
 st.markdown("""
 <style>
     .main-header {
@@ -42,17 +38,14 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# 页面标题
 st.markdown("""
 <div class="main-header">
     <h1>📊 BullBearQA</h1>
-    <p>基于多Agent系统的智能股票分析平台（简化版）</p>
+    <p>基于多Agent系统的智能股票分析平台</p>
 </div>
 """, unsafe_allow_html=True)
 
-# ============================================
 # 侧边栏
-# ============================================
 with st.sidebar:
     st.markdown("## 📖 使用指南")
     st.markdown("""
@@ -78,23 +71,18 @@ with st.sidebar:
         st.session_state.messages = []
         st.rerun()
 
-# ============================================
-# 初始化
-# ============================================
 if 'messages' not in st.session_state:
     st.session_state.messages = []
 
-# 显示对话历史
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"], unsafe_allow_html=True)
 
 # ============================================
-# 辅助函数：提取股票代码（改进版）
+# 辅助函数
 # ============================================
 def extract_tickers(text: str) -> list:
-    """从问题中提取股票代码"""
-    # 常见股票代码列表（用于验证）
+    """从问题中提取股票代码（修复版）"""
     common_stocks = {
         'AAPL', 'MSFT', 'GOOGL', 'GOOG', 'AMZN', 'TSLA', 'META', 'NVDA', 
         'AMD', 'NFLX', 'BABA', 'TSM', 'V', 'JPM', 'WMT', 'JNJ', 'PG',
@@ -102,20 +90,29 @@ def extract_tickers(text: str) -> list:
         'PYPL', 'CMCSA', 'PEP', 'KO', 'T', 'VZ', 'NKE', 'MRK', 'ABT'
     }
     
-    # 1. 先查找常见股票代码
     found_tickers = []
     text_upper = text.upper()
+    
+    # 直接查找常见股票（不用正则边界）
     for stock in common_stocks:
-        if re.search(r'\b' + stock + r'\b', text_upper):
+        if stock in text_upper:
             found_tickers.append(stock)
     
-    # 2. 如果没找到，再尝试提取大写字母组合
+    # 如果没找到，提取大写字母序列
     if not found_tickers:
-        matches = re.findall(r'\b([A-Z]{2,5})\b', text.upper())
-        common_words = {'THE', 'AND', 'OR', 'NOT', 'FOR', 'WITH', 'VS', 'TO', 'OF', 'IN', 'ON', 'AT', 'BY', 'IS', 'ARE', 'WAS', 'WERE', 'PE', 'RSI', 'MA', 'MACD'}
+        matches = re.findall(r'([A-Z]{2,5})', text_upper)
+        common_words = {'THE', 'AND', 'OR', 'NOT', 'FOR', 'WITH', 'VS', 'TO', 'OF', 'IN', 'ON', 'AT', 'BY', 'IS', 'ARE', 'WAS', 'WERE', 'PE', 'RSI', 'MA', 'MACD', 'ROE'}
         found_tickers = [t for t in matches if t not in common_words]
     
-    return found_tickers
+    # 去重
+    seen = set()
+    result = []
+    for ticker in found_tickers:
+        if ticker not in seen:
+            seen.add(ticker)
+            result.append(ticker)
+    
+    return result
 
 def detect_question_type(text: str) -> str:
     """检测问题类型"""
@@ -136,78 +133,65 @@ def detect_question_type(text: str) -> str:
 # 主对话界面
 # ============================================
 if prompt := st.chat_input("请输入你的股票分析问题..."):
-    # 添加用户消息
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
     
-    # 助手回复
     with st.chat_message("assistant"):
         try:
             start_time = time.time()
             
-            # 1. 提取股票代码和检测问题类型
             tickers = extract_tickers(prompt)
             question_type = detect_question_type(prompt)
             
             # 调试信息
-            st.caption(f"🔍 检测到股票: {tickers} | 问题类型: {question_type}")
+            st.caption(f"🔍 检测: 股票={tickers}, 类型={question_type}")
             
             if not tickers:
                 response = """
-我可以帮你分析股票！请尝试以下问题：
+我可以帮你分析股票！请尝试：
 
-- "分析 **AAPL** 的技术面"
-- "**TSLA** 的基本面怎么样？"
-- "**MSFT** 的市场情绪如何？"
-- "对比 **AAPL**、**MSFT** 和 **GOOGL**"
+- "**AAPL** 的PE怎么样？"
+- "分析 **TSLA** 的财务状况"
+- "**NVDA** 的RSI是多少？"
+- "对比 **AAPL** 和 **MSFT**"
 
-💡 提示：请确保包含完整的股票代码（如 AAPL、TSLA 等）
+💡 请确保包含股票代码（如 AAPL、TSLA 等）
                 """
                 st.markdown(response)
                 st.session_state.messages.append({"role": "assistant", "content": response})
             
             else:
                 ticker = tickers[0]
-                response = ""  # 初始化 response 变量
+                response = ""
                 
-                # 2. 根据问题类型调用相应的 Agent
+                # 对比分析
                 if question_type == 'comparison' and len(tickers) >= 2:
-                    with st.spinner("🔄 正在对比分析..."):
+                    with st.spinner("🔄 对比分析中..."):
                         agent = ComparisonAgent()
                         result = agent.analyze(tickers)
                     
                     if result.get('status') == 'success':
-                        response = f"""
-### 🔄 股票对比分析
-
-**{result['summary']}**
-
-#### 📊 对比表格
-"""
-                        # 显示对比表格
+                        response = f"### 🔄 股票对比分析\n\n**{result['summary']}**\n\n"
+                        
                         if 'comparison_table' in result and not result['comparison_table'].empty:
                             st.dataframe(result['comparison_table'], use_container_width=True)
                             
-                            # 排名信息
                             rankings = result.get('rankings', {})
-                            response += "\n\n#### 🏆 排名\n"
+                            response += "#### 🏆 排名\n"
                             
-                            if 'PE比率排名' in rankings and rankings['PE比率排名']:
-                                response += f"**PE比率排名** (从低到高): {', '.join(rankings['PE比率排名'])}\n\n"
-                            
-                            if 'ROE排名' in rankings and rankings['ROE排名']:
-                                response += f"**ROE排名** (从高到低): {', '.join(rankings['ROE排名'])}\n"
-                        else:
-                            response += "\n⚠️ 暂无对比数据\n"
+                            if rankings.get('PE比率排名'):
+                                response += f"**PE比率** (低→高): {', '.join(rankings['PE比率排名'])}\n\n"
+                            if rankings.get('ROE排名'):
+                                response += f"**ROE** (高→低): {', '.join(rankings['ROE排名'])}\n"
                         
                         st.markdown(response)
                     else:
-                        response = f"❌ 对比失败: {result.get('error', '未知错误')}"
-                        st.error(response)
+                        st.error(f"❌ {result.get('error')}")
                 
+                # 技术分析
                 elif question_type == 'technical':
-                    with st.spinner("📈 正在进行技术分析..."):
+                    with st.spinner("📈 技术分析中..."):
                         agent = TechnicalAgent()
                         result = agent.analyze(ticker)
                     
@@ -215,54 +199,48 @@ if prompt := st.chat_input("请输入你的股票分析问题..."):
                         indicators = result['indicators']
                         signals = result['signals']
                         
-                        response = f"""
-### 📈 {ticker} 技术分析
-
-**{result['summary']}**
-
-#### 关键指标
-"""
-                        # 显示指标
+                        response = f"### 📈 {ticker} 技术分析\n\n**{result['summary']}**\n\n"
+                        
                         col1, col2, col3 = st.columns(3)
                         with col1:
                             st.metric("当前价格", f"${indicators['current_price']}")
                             st.metric("RSI", indicators.get('rsi', 'N/A'))
                         with col2:
-                            st.metric("SMA 20", f"${indicators.get('sma_20', 'N/A')}" if indicators.get('sma_20') else 'N/A')
-                            st.metric("SMA 50", f"${indicators.get('sma_50', 'N/A')}" if indicators.get('sma_50') else 'N/A')
+                            sma20 = indicators.get('sma_20')
+                            st.metric("SMA 20", f"${sma20:.2f}" if sma20 else 'N/A')
+                            sma50 = indicators.get('sma_50')
+                            st.metric("SMA 50", f"${sma50:.2f}" if sma50 else 'N/A')
                         with col3:
                             st.metric("趋势", signals.get('trend', 'N/A'))
                             st.metric("MACD", signals.get('macd', 'N/A'))
                         
                         response += f"""
-- **RSI状态**: {signals.get('rsi', 'N/A')}
-- **趋势方向**: {signals.get('trend', 'N/A')}
-- **MACD信号**: {signals.get('macd', 'N/A')}
+**信号解读：**
+- RSI: {signals.get('rsi', 'N/A')}
+- 趋势: {signals.get('trend', 'N/A')}
+- MACD: {signals.get('macd', 'N/A')}
                         """
                         st.markdown(response)
                     else:
-                        response = f"❌ 技术分析失败: {result.get('error', '未知错误')}"
-                        st.error(response)
+                        st.error(f"❌ {result.get('error')}")
                 
+                # 基本面分析
                 elif question_type == 'fundamental':
-                    with st.spinner("💼 正在进行基本面分析..."):
+                    with st.spinner("💼 基本面分析中..."):
                         agent = FundamentalAgent()
                         result = agent.analyze(ticker)
                     
                     if result.get('status') == 'success':
                         metrics = result['metrics']
                         
-                        response = f"""
-### 💼 {ticker} 基本面分析
+                        response = f"""### 💼 {ticker} 基本面分析
 
 **公司**: {result['company_name']}  
 **行业**: {result.get('sector', 'N/A')} - {result.get('industry', 'N/A')}
 
 **{result['summary']}**
 
-#### 关键财务指标
 """
-                        # 显示指标
                         col1, col2 = st.columns(2)
                         with col1:
                             pe = metrics.get('pe_ratio')
@@ -275,44 +253,39 @@ if prompt := st.chat_input("请输入你的股票分析问题..."):
                             st.metric("股息率", f"{div_yield*100:.2f}%" if div_yield else 'N/A')
                         
                         response += f"""
-- **估值评级**: {result['valuation']}
-- **市值**: ${metrics.get('market_cap', 0)/1e9:.1f}B
-- **Beta**: {metrics.get('beta', 'N/A')}
+**关键指标：**
+- 估值: {result['valuation']}
+- 市值: ${metrics.get('market_cap', 0)/1e9:.1f}B
+- Beta: {metrics.get('beta', 'N/A')}
                         """
                         st.markdown(response)
                     else:
-                        response = f"❌ 基本面分析失败: {result.get('error', '未知错误')}"
-                        st.error(response)
+                        st.error(f"❌ {result.get('error')}")
                 
+                # 情绪分析
                 elif question_type == 'sentiment':
-                    with st.spinner("😊 正在分析市场情绪..."):
+                    with st.spinner("😊 情绪分析中..."):
                         agent = SentimentAgent()
                         result = agent.analyze(ticker)
                     
                     if result.get('status') == 'success':
-                        response = f"""
-### 😊 {ticker} 市场情绪分析
-
-**{result['summary']}**
-
-#### 情绪指标
-"""
+                        response = f"### 😊 {ticker} 市场情绪\n\n**{result['summary']}**\n\n"
+                        
                         col1, col2 = st.columns(2)
                         with col1:
-                            st.metric("情绪标签", result['sentiment_label'])
-                            st.metric("情绪分数", result['sentiment_score'])
+                            st.metric("情绪", result['sentiment_label'])
+                            st.metric("分数", result['sentiment_score'])
                         with col2:
                             st.metric("置信度", f"{result['confidence']*100:.0f}%")
-                            st.metric("分析新闻数", result['news_count'])
+                            st.metric("新闻数", result['news_count'])
                         
                         st.markdown(response)
                     else:
-                        response = f"❌ 情绪分析失败: {result.get('error', '未知错误')}"
-                        st.error(response)
+                        st.error(f"❌ {result.get('error')}")
                 
+                # 综合分析
                 else:
-                    # 通用分析：同时调用技术和基本面
-                    with st.spinner("📊 正在进行综合分析..."):
+                    with st.spinner("📊 综合分析中..."):
                         tech_agent = TechnicalAgent()
                         fund_agent = FundamentalAgent()
                         
@@ -330,24 +303,21 @@ if prompt := st.chat_input("请输入你的股票分析问题..."):
                     
                     st.markdown(response)
                 
-                # 添加执行时间
+                # 执行时间
                 execution_time = time.time() - start_time
-                time_info = f"⏱️ 分析耗时: {execution_time:.2f}秒"
-                st.caption(time_info)
+                st.caption(f"⏱️ 耗时: {execution_time:.2f}秒")
                 
-                # 保存到历史
-                full_response = response + f"\n\n{time_info}"
+                full_response = response + f"\n\n⏱️ {execution_time:.2f}秒"
                 st.session_state.messages.append({"role": "assistant", "content": full_response})
         
         except Exception as e:
-            error_message = f"❌ 分析过程中出现错误: {str(e)}"
-            st.error(error_message)
-            st.session_state.messages.append({"role": "assistant", "content": error_message})
+            error_msg = f"❌ 错误: {str(e)}"
+            st.error(error_msg)
+            st.session_state.messages.append({"role": "assistant", "content": error_msg})
             
-            with st.expander("🔍 查看详细错误"):
+            with st.expander("🔍 详细错误"):
                 st.code(traceback.format_exc())
 
-# 页脚
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666;'>

@@ -71,7 +71,7 @@ with st.sidebar:
     st.markdown("## 📖 使用指南")
     st.markdown("""
 **● 基本面分析**
-- "AAPL的PE怎么样？"
+- "AAPL的PE是多少？"
 - "分析TSLA的财务状况"
 
 **● 技术面分析**

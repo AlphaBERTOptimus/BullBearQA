@@ -5,24 +5,8 @@
 # 强制 UTF-8 编码设置（必须在所有 import 之前）
 # ============================================
 import sys
-import io
-
-if sys.version_info[0] >= 3:
-    # 重新包装标准输出和错误输出
-    if hasattr(sys.stdout, 'buffer'):
-        sys.stdout = io.TextIOWrapper(
-            sys.stdout.buffer,
-            encoding='utf-8',
-            errors='replace',
-            line_buffering=True
-        )
-    if hasattr(sys.stderr, 'buffer'):
-        sys.stderr = io.TextIOWrapper(
-            sys.stderr.buffer,
-            encoding='utf-8',
-            errors='replace',
-            line_buffering=True
-        )
+import os
+os.environ['PYTHONIOENCODING'] = 'utf-8'
 
 # ============================================
 # 正常的导入

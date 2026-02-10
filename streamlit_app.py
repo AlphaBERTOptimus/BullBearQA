@@ -1,11 +1,31 @@
 # -*- coding: utf-8 -*-
-# Version: 2.2.2 - Fixed all errors
+# Version: 2.2.0 - Fixed encoding issues
 
 # ============================================
-# 最小化编码设置（避免 I/O 错误）
+# 强制 UTF-8 编码设置（必须在所有 import 之前）
 # ============================================
+import sys
+import io
 import os
+
+# 强制设置标准输出编码为 UTF-8
+if hasattr(sys.stdout, 'buffer'):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+if hasattr(sys.stderr, 'buffer'):
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+
+# 设置默认编码
 os.environ['PYTHONIOENCODING'] = 'utf-8'
+os.environ['LANG'] = 'en_US.UTF-8'
+os.environ['LC_ALL'] = 'en_US.UTF-8'
+
+# 如果在 Windows 上，额外设置
+if sys.platform.startswith('win'):
+    try:
+        import locale
+        locale.setlocale(locale.LC_ALL, '')
+    except:
+        pass
 
 # ============================================
 # 正常的导入
@@ -60,6 +80,17 @@ st.markdown("""
         background-color: #1e3c72;
         color: white;
     }
+    .chat-message {
+        padding: 1rem;
+        border-radius: 10px;
+        margin-bottom: 1rem;
+    }
+    .user-message {
+        background-color: #e3f2fd;
+    }
+    .assistant-message {
+        background-color: #f5f5f5;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -77,6 +108,7 @@ st.markdown("""
 with st.sidebar:
     st.markdown("## 🔐 配置")
     
+    # API Key 输入
     api_key = st.text_input(
         "DeepSeek API Key",
         type="password",
@@ -89,8 +121,11 @@ with st.sidebar:
     
     st.markdown("---")
     
+    # 使用指南
     st.markdown("## 📖 使用指南")
     st.markdown("""
+BullBearQA 支持以下类型的问题：
+
 **● 基本面分析**
 - "AAPL的PE怎么样？"
 - "分析TSLA的财务状况"
@@ -101,48 +136,66 @@ with st.sidebar:
 
 **● 市场情绪**
 - "最近GOOGL的新闻如何？"
+- "市场对META的看法"
 
 **● 股票对比**
 - "比较AAPL和MSFT"
 - "NVDA vs AMD 哪个更好？"
+
+**💡 自动生成交易策略**
+- 任何股票查询都会生成可执行策略
+- 支持保存到模拟盘追踪盈亏
     """)
     
     st.markdown("---")
     
+    # 高级设置
     with st.expander("⚙️ 高级设置"):
         show_routing = st.checkbox("显示路由信息", value=False)
         show_timing = st.checkbox("显示执行时间", value=True)
     
     st.markdown("---")
     
+    # 清除历史
     if st.button("🗑️ 清除对话历史"):
         st.session_state.messages = []
         st.rerun()
     
     st.markdown("---")
+    
+    # 投资评分
     st.markdown("### 💡 投资评分")
     if 'last_score' in st.session_state:
         score_data = st.session_state.last_score
         score = score_data['score']
         rating = score_data['rating']
         
+        # 显示评分
         st.metric("综合评分", f"{score}/100", rating)
+        
+        # 进度条
         st.progress(score / 100)
         
+        # 详细分解
         breakdown = score_data.get('breakdown', {})
         if breakdown:
             st.markdown("**评分构成**")
             for key, value in breakdown.items():
                 st.text(f"{key}: {value:+d}")
     
+    # ============================================
+    # 模拟交易追踪
+    # ============================================
     st.markdown("---")
     st.sidebar.subheader("📊 模拟交易追踪")
     
+    # 初始化tracker
     if 'paper_tracker' not in st.session_state:
         st.session_state.paper_tracker = PaperTradingTracker()
     
     tracker = st.session_state.paper_tracker
     
+    # 显示统计
     stats = tracker.get_performance_stats()
     if stats:
         col1, col2 = st.sidebar.columns(2)
@@ -161,6 +214,7 @@ with st.sidebar:
     else:
         st.sidebar.info("还没有交易记录\n试试生成策略并保存！")
     
+    # 查看所有交易
     if st.sidebar.checkbox("查看交易记录"):
         all_trades = tracker.get_all_trades()
         if all_trades:
@@ -179,6 +233,9 @@ with st.sidebar:
         else:
             st.sidebar.write("暂无记录")
 
+# ============================================
+# 初始化组件（带缓存）
+# ============================================
 @st.cache_resource
 def get_components(api_key: str):
     """初始化所有组件（带缓存）"""
@@ -213,13 +270,20 @@ def get_components(api_key: str):
         st.error(f"初始化组件失败: {str(e)}")
         return None
 
+# ============================================
+# 初始化对话历史
+# ============================================
 if 'messages' not in st.session_state:
     st.session_state.messages = []
 
+# 显示对话历史
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
+# ============================================
+# 主对话界面
+# ============================================
 if api_key:
     try:
         components = get_components(api_key)
@@ -237,15 +301,18 @@ if api_key:
         tracker = st.session_state.paper_tracker
         
         if prompt := st.chat_input("请输入你的股票分析问题..."):
+            # 添加用户消息
             st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"):
                 st.markdown(prompt)
             
+            # 助手回复
             with st.chat_message("assistant"):
                 message_placeholder = st.empty()
                 start_time = time.time()
                 
                 try:
+                    # 1. 路由分析
                     with st.spinner("🎯 正在分析问题..."):
                         routing_result = router.route(prompt)
                     
@@ -257,6 +324,7 @@ if api_key:
                     tickers = routing_result.get('tickers', [])
                     ticker = tickers[0] if tickers else None
                     
+                    # 2. 执行相应的 Agent
                     agents_map = {
                         'fundamental': fundamental_agent,
                         'technical': technical_agent,
@@ -272,14 +340,17 @@ if api_key:
                             output = selected_agent.run(prompt)
                             agent_outputs[agent_type] = output
                     
+                    # 3. 生成综合分析
                     with st.spinner("🤔 正在生成综合分析..."):
                         final_response = judge.synthesize(prompt, agent_outputs)
                     
+                    # 4. 计算投资评分
                     score_data = judge.create_investment_score(agent_outputs)
                     st.session_state.last_score = score_data
                     rating = score_data.get('rating', 'Hold')
                     execution_time = time.time() - start_time
                     
+                    # 5. 显示回复
                     response_text = final_response
                     if show_timing:
                         response_text += f"\n\n⏱️ 执行时间: {execution_time:.2f}秒"
@@ -287,12 +358,15 @@ if api_key:
                     message_placeholder.markdown(response_text)
                     st.session_state.messages.append({"role": "assistant", "content": response_text})
                     
-                    # K线图可视化
+                    # ============================================
+                    # 6. K线图可视化
+                    # ============================================
                     if ticker or (tickers and len(tickers) >= 2):
                         st.markdown("---")
                         
                         chart_generator = CandlestickChart()
                         
+                        # 情况1: 对比查询（多个股票）
                         if tickers and len(tickers) >= 2:
                             st.markdown("## 📈 股票走势对比")
                             
@@ -330,9 +404,19 @@ if api_key:
                                                 delta=f"{price_info['change_pct']:+.2f}%",
                                                 delta_color=change_color
                                             )
+                                
+                                with st.expander("📊 图表说明", expanded=False):
+                                    st.markdown("""
+**对比图说明：**
+- 📈 所有股票以第一天价格为基准（100%）归一化
+- 可以直观看出哪只股票涨幅更大
+- 🖱️ 鼠标悬停查看具体涨跌幅
+- 🔍 拖动选择区域放大查看细节
+                                    """)
                             else:
                                 st.warning("⚠️ 无法获取对比数据")
                         
+                        # 情况2: 单个股票查询
                         elif ticker:
                             st.markdown("## 📈 股价走势分析")
                             
@@ -378,10 +462,27 @@ if api_key:
                             
                             if fig:
                                 st.plotly_chart(fig, use_container_width=True)
+                                
+                                with st.expander("📊 图表说明", expanded=False):
+                                    st.markdown("""
+**K线图说明：**
+- 🟢 **绿色K线**：当日收盘价高于开盘价（上涨）
+- 🔴 **红色K线**：当日收盘价低于开盘价（下跌）
+- 🟠 **橙色线条（MA20）**：20日移动平均线，反映短期趋势
+- 🟣 **紫色线条（MA50）**：50日移动平均线，反映中期趋势
+- 📊 **底部柱状图**：成交量，颜色与K线对应
+
+**如何使用：**
+- 🖱️ 鼠标悬停查看详细数据
+- 🔍 拖动选择区域放大
+- 📌 双击重置视图
+                                    """)
                             else:
-                                st.warning("⚠️ 无法获取股价数据")
+                                st.warning("⚠️ 无法获取股价数据，请稍后重试或检查股票代码")
                     
-                    # 交易策略生成
+                    # ============================================
+                    # 7. 交易策略生成
+                    # ============================================
                     if ticker:
                         st.markdown("---")
                         st.subheader("📋 可执行交易策略")
@@ -409,7 +510,7 @@ if api_key:
                         
                         if strategy:
                             if rating == 'Hold':
-                                st.warning("💡 **注意**: 当前评级为Hold，以下策略仅供参考。")
+                                st.warning("💡 **注意**: 当前评级为Hold，以下策略仅供参考。如果你决定交易，建议谨慎操作。")
                             
                             st.success(f"✅ 已生成 {strategy['action']} 策略")
                             
@@ -418,10 +519,10 @@ if api_key:
                                 st.metric("入场价", f"${strategy['entry_price']:.2f}")
                             with col2:
                                 gain = ((strategy['target_price']/strategy['entry_price']-1)*100)
-                                st.metric("目标价", f"${strategy['target_price']:.2f}", delta=f"+{gain:.1f}%")
+                                st.metric("目标价", f"${strategy['target_price']:.2f}", delta=f"+{gain:.1f}%", delta_color="normal")
                             with col3:
                                 loss = ((1-strategy['stop_loss']/strategy['entry_price'])*100)
-                                st.metric("止损价", f"${strategy['stop_loss']:.2f}", delta=f"-{loss:.1f}%")
+                                st.metric("止损价", f"${strategy['stop_loss']:.2f}", delta=f"-{loss:.1f}%", delta_color="inverse")
                             with col4:
                                 st.metric("建议仓位", strategy['position_size'])
                             
@@ -436,8 +537,9 @@ if api_key:
                                     st.write("**策略理由**")
                                     st.info(strategy['reason'])
                                     st.write("**信心度**")
-                                    st.progress(strategy['confidence'])
-                                    st.caption(f"{strategy['confidence']*100:.0f}%")
+                                    confidence = strategy['confidence']
+                                    st.progress(confidence)
+                                    st.caption(f"{confidence*100:.0f}%")
                             
                             st.write("**📝 交易订单（可复制）**")
                             order_text = f"""交易订单
@@ -458,21 +560,29 @@ if api_key:
                             
                             st.code(order_text, language="text")
                             
+                            # 保存到模拟盘
                             col1, col2 = st.columns([1, 3])
                             with col1:
                                 if st.button("💾 保存到模拟盘", type="primary", key=f"save_{ticker}_{time.time()}"):
                                     trade_id = tracker.add_trade(strategy)
                                     st.success(f"✅ 已保存到模拟盘（交易编号 #{trade_id}）")
                                     st.balloons()
-                                    st.info("💡 请在侧边栏勾选「查看交易记录」")
+                                    st.info("💡 请在侧边栏勾选「查看交易记录」查看已保存的策略")
                             with col2:
-                                st.caption("💡 保存后可在侧边栏查看交易记录")
+                                st.caption("💡 保存后可在侧边栏查看交易记录和追踪盈亏")
                         else:
-                            st.warning("⚠️ 策略生成失败")
+                            st.warning("⚠️ 策略生成失败，可能是获取价格数据失败，请稍后重试")
                         
-                        # 期权策略
+                        # ============================================
+                        # 8. 期权策略推荐
+                        # ============================================
                         st.markdown("---")
                         st.subheader("📊 期权策略推荐（进阶）")
+                        
+                        if rating == 'Hold':
+                            st.caption("💡 虽然当前建议持有，但如果你已持有股票，可以考虑备兑开仓等策略增强收益")
+                        else:
+                            st.caption("💡 如果你了解期权，可以考虑以下策略")
                         
                         volatility = st.select_slider(
                             "当前波动率",
@@ -496,22 +606,41 @@ if api_key:
                                 with col2:
                                     st.write("**推荐度**")
                                     st.write(strategy_opt['推荐度'])
+                                    if '⚠️ 风险提示' in strategy_opt:
+                                        st.warning(strategy_opt['⚠️ 风险提示'])
+                                    elif '💡 提示' in strategy_opt:
+                                        st.info(strategy_opt['💡 提示'])
                                 st.write("**策略说明**")
                                 st.info(strategy_opt['说明'])
-                
+                                if strategy_opt.get('优点'):
+                                    st.write("**优点**")
+                                    for pro in strategy_opt['优点']:
+                                        st.write(f"✅ {pro}")
+                                if strategy_opt.get('缺点'):
+                                    st.write("**缺点**")
+                                    for con in strategy_opt['缺点']:
+                                        st.write(f"⚠️ {con}")
+                    
                 except Exception as e:
                     error_message = f"❌ 处理过程中出现错误: {str(e)}"
                     message_placeholder.error(error_message)
                     st.session_state.messages.append({"role": "assistant", "content": error_message})
                     
+                    # 显示详细错误
                     with st.expander("🔍 查看详细错误信息"):
                         st.code(traceback.format_exc())
     
     except Exception as e:
         st.error(f"❌ 初始化组件失败: {str(e)}")
-        st.info("💡 请检查 API Key 是否正确")
+        st.info("💡 请检查 API Key 是否正确，或稍后重试。")
+        
+        with st.expander("🔍 查看详细错误"):
+            st.code(traceback.format_exc())
 
 else:
+    # ============================================
+    # 未输入 API Key 时的引导页面
+    # ============================================
     st.info("👈 请在左侧侧边栏输入你的 DeepSeek API Key 以开始使用")
     
     st.markdown("### 💡 示例问题")
@@ -532,16 +661,22 @@ else:
         st.markdown("""
         **市场情绪**
         - 最近GOOGL的新闻如何？
+        - 市场对META的看法
         
         **股票对比**
         - 比较AAPL和MSFT
         - NVDA vs AMD 哪个更好？
+        
+        **💡 所有查询都会生成可追踪的交易策略！**
         """)
 
+# ============================================
+# 页脚
+# ============================================
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666;'>
     <p>⚠️ 免责声明：本平台提供的分析仅供参考，不构成投资建议。投资有风险，入市需谨慎。</p>
-    <p>🔗 <a href='https://github.com/AlphaBERTOptimus/BullBearQA' target='_blank'>GitHub</a> | Powered by DeepSeek & LangChain</p>
+    <p>🔗 <a href='https://github.com/AlphaBERTOptimus/BullBearQA' target='_blank'>GitHub 项目地址</a> | Powered by DeepSeek & LangChain</p>
 </div>
 """, unsafe_allow_html=True)

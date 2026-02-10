@@ -1,45 +1,41 @@
 """基本面分析代理"""
 from typing import Dict, Any
 import yfinance as yf
+from .base_agent import BaseAgent
 
 
-class FundamentalAgent:
+class FundamentalAgent(BaseAgent):
     """基本面分析代理"""
     
     def __init__(self):
-        self.name = "FundamentalAgent"
-        self.description = "执行基本面分析，包括财务指标、估值等"
+        super().__init__(
+            name="FundamentalAgent",
+            description="执行基本面分析，包括财务指标、估值等"
+        )
     
     def analyze(self, ticker: str) -> Dict[str, Any]:
-        """
-        执行基本面分析
-        
-        Args:
-            ticker: 股票代码
-            
-        Returns:
-            基本面分析结果
-        """
+        """执行基本面分析"""
         try:
             stock = yf.Ticker(ticker)
             info = stock.info
             
-            # 提取关键财务指标
             metrics = self._extract_metrics(info)
-            
-            # 估值分析
             valuation = self._analyze_valuation(metrics)
             
             return {
                 "ticker": ticker,
+                "agent": self.name,
+                "status": "success",
                 "company_name": info.get('longName', ticker),
+                "sector": info.get('sector', 'N/A'),
+                "industry": info.get('industry', 'N/A'),
                 "metrics": metrics,
                 "valuation": valuation,
                 "summary": self._generate_summary(metrics, valuation)
             }
             
         except Exception as e:
-            return {"error": f"基本面分析失败: {str(e)}"}
+            return self._handle_error(e, ticker)
     
     def _extract_metrics(self, info: Dict) -> Dict[str, Any]:
         """提取财务指标"""
@@ -55,6 +51,7 @@ class FundamentalAgent:
             "earnings_growth": info.get('earningsGrowth'),
             "profit_margin": info.get('profitMargins'),
             "dividend_yield": info.get('dividendYield'),
+            "beta": info.get('beta'),
         }
     
     def _analyze_valuation(self, metrics: Dict[str, Any]) -> str:
@@ -74,6 +71,8 @@ class FundamentalAgent:
         
         if peg and peg < 1:
             valuation += " (相对增长率低估)"
+        elif peg and peg > 2:
+            valuation += " (相对增长率高估)"
         
         return valuation
     
@@ -88,6 +87,6 @@ class FundamentalAgent:
             summary_parts.append(f"ROE: {metrics['roe']*100:.1f}%")
         
         if metrics['dividend_yield']:
-            summary_parts.append(f"股息率: {metrics['dividend_yield']*100:.2f}%")
+            summary_parts.append(f"股息: {metrics['dividend_yield']*100:.2f}%")
         
         return " | ".join(summary_parts)

@@ -15,18 +15,19 @@ class BaseAgent(ABC):
         pass
     
     def _safe_llm_invoke(self, prompt: str) -> str:
-        """安全调用LLM，处理编码问题"""
+        """安全调用LLM，使用英文提示词避免编码问题"""
         try:
+            # 调用 LLM（使用英文提示词）
             response = self.llm.invoke(prompt)
-            # 确保返回的是字符串
+            
+            # 提取内容
             if hasattr(response, 'content'):
                 content = response.content
             else:
                 content = str(response)
             
-            # 强制使用 UTF-8 编码
-            if isinstance(content, bytes):
-                return content.decode('utf-8', errors='ignore')
+            # 确保返回字符串
             return str(content)
+            
         except Exception as e:
-            return f"LLM调用失败: {str(e)}"
+            return f"LLM call failed: {str(e)}"

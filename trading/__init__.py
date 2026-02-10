@@ -1,6 +1,6 @@
 """
 Trading模块 - 交易相关功能
-"""
+
 
 from .strategy_generator import StrategyGenerator
 from .options_recommender import OptionsRecommender
@@ -11,3 +11,4 @@ __all__ = [
     'OptionsRecommender',
     'PaperTradingTracker'
 ]
+"""

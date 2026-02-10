@@ -1,29 +1,37 @@
 # -*- coding: utf-8 -*-
-# Version: 2.2.0 - Fixed encoding issues
+# Version: 2.2.1 - Fixed encoding issues for Streamlit Cloud
 
 # ============================================
-# 强制 UTF-8 编码设置（必须在所有 import 之前）
+# 强制 UTF-8 编码设置（兼容 Streamlit Cloud）
 # ============================================
 import sys
 import io
 import os
 
-# 强制设置标准输出编码为 UTF-8
-if hasattr(sys.stdout, 'buffer'):
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-if hasattr(sys.stderr, 'buffer'):
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
-
-# 设置默认编码
+# 设置环境变量（必须在其他设置之前）
 os.environ['PYTHONIOENCODING'] = 'utf-8'
-os.environ['LANG'] = 'en_US.UTF-8'
-os.environ['LC_ALL'] = 'en_US.UTF-8'
+os.environ['LANG'] = 'C.UTF-8'
+os.environ['LC_ALL'] = 'C.UTF-8'
 
-# 如果在 Windows 上，额外设置
+# 安全地设置标准输出编码
+try:
+    if hasattr(sys.stdout, 'buffer') and hasattr(sys.stdout.buffer, 'raw'):
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+except (AttributeError, ValueError):
+    # Streamlit Cloud 环境下可能已经设置好了，跳过
+    pass
+
+try:
+    if hasattr(sys.stderr, 'buffer') and hasattr(sys.stderr.buffer, 'raw'):
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+except (AttributeError, ValueError):
+    pass
+
+# Windows 兼容
 if sys.platform.startswith('win'):
     try:
         import locale
-        locale.setlocale(locale.LC_ALL, '')
+        locale.setlocale(locale.LC_ALL, 'Chinese')
     except:
         pass
 

@@ -1,53 +1,59 @@
-"""
-诊断导入问题
-"""
-import sys
-import traceback
+"""测试所有代理"""
+from agents import (
+    TechnicalAgent,
+    FundamentalAgent,
+    SentimentAgent,
+    ComparisonAgent
+)
 
-print("="*50)
-print("开始诊断导入问题")
-print("="*50)
 
-# 测试1: 导入 base_agent
-try:
-    from agents.base_agent import BaseAgent
-    print("✅ base_agent 导入成功")
-except Exception as e:
-    print(f"❌ base_agent 导入失败: {e}")
-    traceback.print_exc()
+def test_all_agents():
+    """测试所有代理功能"""
+    
+    print("=" * 60)
+    print("测试所有 Agent 模块")
+    print("=" * 60)
+    
+    # 1. 技术分析
+    print("\n1️⃣  技术分析代理")
+    print("-" * 60)
+    tech_agent = TechnicalAgent()
+    tech_result = tech_agent.analyze("AAPL")
+    print(f"状态: {tech_result.get('status')}")
+    print(f"摘要: {tech_result.get('summary')}")
+    
+    # 2. 基本面分析
+    print("\n2️⃣  基本面分析代理")
+    print("-" * 60)
+    fund_agent = FundamentalAgent()
+    fund_result = fund_agent.analyze("AAPL")
+    print(f"状态: {fund_result.get('status')}")
+    print(f"公司: {fund_result.get('company_name')}")
+    print(f"摘要: {fund_result.get('summary')}")
+    
+    # 3. 情绪分析
+    print("\n3️⃣  情绪分析代理")
+    print("-" * 60)
+    sent_agent = SentimentAgent()
+    sent_result = sent_agent.analyze("AAPL")
+    print(f"状态: {sent_result.get('status')}")
+    print(f"摘要: {sent_result.get('summary')}")
+    
+    # 4. 对比分析
+    print("\n4️⃣  对比分析代理")
+    print("-" * 60)
+    comp_agent = ComparisonAgent()
+    comp_result = comp_agent.analyze(["AAPL", "MSFT", "GOOGL"])
+    print(f"状态: {comp_result.get('status')}")
+    print(f"摘要: {comp_result.get('summary')}")
+    if 'comparison_table' in comp_result:
+        print("\n对比表格:")
+        print(comp_result['comparison_table'])
+    
+    print("\n" + "=" * 60)
+    print("✅ 所有代理测试完成！")
+    print("=" * 60)
 
-# 测试2: 导入 fundamental_agent
-try:
-    from agents.fundamental_agent import FundamentalAgent
-    print("✅ fundamental_agent 导入成功")
-except Exception as e:
-    print(f"❌ fundamental_agent 导入失败: {e}")
-    traceback.print_exc()
 
-# 测试3: 导入 technical_agent
-try:
-    from agents.technical_agent import TechnicalAgent
-    print("✅ technical_agent 导入成功")
-except Exception as e:
-    print(f"❌ technical_agent 导入失败: {e}")
-    traceback.print_exc()
-
-# 测试4: 导入 sentiment_agent
-try:
-    from agents.sentiment_agent import SentimentAgent
-    print("✅ sentiment_agent 导入成功")
-except Exception as e:
-    print(f"❌ sentiment_agent 导入失败: {e}")
-    traceback.print_exc()
-
-# 测试5: 导入 comparison_agent
-try:
-    from agents.comparison_agent import ComparisonAgent
-    print("✅ comparison_agent 导入成功")
-except Exception as e:
-    print(f"❌ comparison_agent 导入失败: {e}")
-    traceback.print_exc()
-
-print("="*50)
-print("诊断完成")
-print("="*50)
+if __name__ == "__main__":
+    test_all_agents()

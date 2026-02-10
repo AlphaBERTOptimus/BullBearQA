@@ -39,40 +39,28 @@ class TechnicalAgent(BaseAgent):
             return f"技术分析失败: {str(e)}"
     
     def _build_english_prompt(self, ticker: str, indicators: dict, signals: dict) -> str:
-        """构建英文提示词 - 修复 f-string 格式错误"""
-        # 先处理可能为 None 的值
+        """构建英文提示词"""
         sma_20 = indicators.get('sma_20')
         sma_50 = indicators.get('sma_50')
         sma_200 = indicators.get('sma_200')
-        rsi = indicators.get('rsi')
-        bb_upper = indicators.get('bb_upper')
-        bb_lower = indicators.get('bb_lower')
-        
-        # 转换为字符串
-        sma_20_str = f"${sma_20:.2f}" if sma_20 is not None else 'N/A'
-        sma_50_str = f"${sma_50:.2f}" if sma_50 is not None else 'N/A'
-        sma_200_str = f"${sma_200:.2f}" if sma_200 is not None else 'N/A'
-        rsi_str = f"{rsi:.1f}" if rsi is not None else 'N/A'
-        bb_upper_str = f"${bb_upper:.2f}" if bb_upper is not None else 'N/A'
-        bb_lower_str = f"${bb_lower:.2f}" if bb_lower is not None else 'N/A'
         
         return f"""You are a professional technical analyst. Provide a concise technical analysis of {ticker} in Chinese.
 
 Price Info:
 - Current Price: ${indicators['current_price']:.2f}
-- SMA 20: {sma_20_str}
-- SMA 50: {sma_50_str}
-- SMA 200: {sma_200_str}
+- SMA 20: ${sma_20:.2f if sma_20 else 'N/A'}
+- SMA 50: ${sma_50:.2f if sma_50 else 'N/A'}
+- SMA 200: ${sma_200:.2f if sma_200 else 'N/A'}
 
 Momentum Indicators:
-- RSI(14): {rsi_str} - {signals.get('rsi', 'N/A')}
+- RSI(14): {indicators.get('rsi', 'N/A')} - {signals.get('rsi', 'N/A')}
 - MACD: {signals.get('macd', 'N/A')}
 
 Trend: {signals.get('trend', 'N/A')}
 
 Bollinger Bands:
-- Upper: {bb_upper_str}
-- Lower: {bb_lower_str}
+- Upper: ${indicators.get('bb_upper', 'N/A')}
+- Lower: ${indicators.get('bb_lower', 'N/A')}
 
 Please provide in Chinese (within 150 characters):
 1. Technical overview
@@ -84,15 +72,12 @@ Respond in professional but easy-to-understand Chinese."""
     
     def _fallback_analysis(self, ticker: str, indicators: dict, signals: dict) -> str:
         """备用分析"""
-        rsi = indicators.get('rsi')
-        rsi_str = f"{rsi:.1f}" if rsi is not None else 'N/A'
-        
         return f"""【技术分析 - {ticker}】
 
 当前价格: ${indicators['current_price']:.2f}
 
 技术指标:
-- RSI: {rsi_str} ({signals.get('rsi', 'N/A')})
+- RSI: {indicators.get('rsi', 'N/A')} ({signals.get('rsi', 'N/A')})
 - 趋势: {signals.get('trend', 'N/A')}
 - MACD: {signals.get('macd', 'N/A')}
 

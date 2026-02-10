@@ -1,50 +1,42 @@
 """技术分析代理"""
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 import yfinance as yf
 import pandas as pd
-import numpy as np
+from .base_agent import BaseAgent
 
 
-class TechnicalAgent:
-    """技术分析代理 - 不依赖 LangChain Tool"""
+class TechnicalAgent(BaseAgent):
+    """技术分析代理"""
     
     def __init__(self):
-        self.name = "TechnicalAgent"
-        self.description = "执行技术指标分析，包括趋势、动量、波动率等"
+        super().__init__(
+            name="TechnicalAgent",
+            description="执行技术指标分析，包括趋势、动量、波动率等"
+        )
     
     def analyze(self, ticker: str, period: str = "1y") -> Dict[str, Any]:
-        """
-        执行技术分析
-        
-        Args:
-            ticker: 股票代码
-            period: 分析周期
-            
-        Returns:
-            技术分析结果
-        """
+        """执行技术分析"""
         try:
             stock = yf.Ticker(ticker)
             df = stock.history(period=period)
             
             if df.empty:
-                return {"error": f"无法获取 {ticker} 的数据"}
+                return {"error": f"无法获取 {ticker} 的数据", "ticker": ticker}
             
-            # 计算技术指标
             indicators = self._calculate_indicators(df)
-            
-            # 生成信号
             signals = self._generate_signals(indicators)
             
             return {
                 "ticker": ticker,
+                "agent": self.name,
+                "status": "success",
                 "indicators": indicators,
                 "signals": signals,
                 "summary": self._generate_summary(indicators, signals)
             }
             
         except Exception as e:
-            return {"error": f"技术分析失败: {str(e)}"}
+            return self._handle_error(e, ticker)
     
     def _calculate_indicators(self, df: pd.DataFrame) -> Dict[str, Any]:
         """计算技术指标"""
@@ -108,7 +100,6 @@ class TechnicalAgent:
         """生成交易信号"""
         signals = {}
         
-        # RSI信号
         if indicators['rsi']:
             if indicators['rsi'] > 70:
                 signals['rsi'] = "超买"
@@ -117,14 +108,12 @@ class TechnicalAgent:
             else:
                 signals['rsi'] = "中性"
         
-        # 趋势信号
         if indicators['sma_50'] and indicators['sma_200']:
             if indicators['sma_50'] > indicators['sma_200']:
                 signals['trend'] = "多头"
             else:
                 signals['trend'] = "空头"
         
-        # MACD信号
         if indicators['macd'] and indicators['macd_signal']:
             if indicators['macd'] > indicators['macd_signal']:
                 signals['macd'] = "看涨"
@@ -138,7 +127,7 @@ class TechnicalAgent:
         summary_parts = []
         
         if indicators['current_price']:
-            summary_parts.append(f"当前价格: ${indicators['current_price']}")
+            summary_parts.append(f"价格: ${indicators['current_price']}")
         
         if 'rsi' in signals:
             summary_parts.append(f"RSI {signals['rsi']}")

@@ -1,185 +1,344 @@
-"""技术分析代理"""
-import yfinance as yf
-import pandas as pd
-from .base_agent import BaseAgent
+# -*- coding: utf-8 -*-
+# Version: 2.3.1 - All fixes applied
 
+import os
+os.environ['PYTHONIOENCODING'] = 'utf-8'
 
-class TechnicalAgent(BaseAgent):
-    """技术分析代理"""
+import streamlit as st
+from langchain_openai import ChatOpenAI
+from agents.fundamental_agent import FundamentalAgent
+from agents.technical_agent import TechnicalAgent
+from agents.sentiment_agent import SentimentAgent
+from agents.comparison_agent import ComparisonAgent
+from router.question_router import QuestionRouter
+from judge.arena_judge import ArenaJudge
+import time
+import traceback
+import re
+
+from trading.strategy_generator import StrategyGenerator
+from trading.options_recommender import OptionsRecommender
+from trading.paper_trading import PaperTradingTracker
+from visualization.candlestick_chart import CandlestickChart
+
+st.set_page_config(
+    page_title="BullBearQA - 智能股票分析",
+    page_icon="📊",
+    layout="wide"
+)
+
+st.markdown("""
+<style>
+    .main-header {
+        background: linear-gradient(90deg, #1e3c72 0%, #2a5298 100%);
+        padding: 2rem;
+        border-radius: 10px;
+        margin-bottom: 2rem;
+        text-align: center;
+    }
+    .main-header h1 {
+        color: white;
+        margin: 0;
+        font-size: 2.5rem;
+    }
+    .main-header p {
+        color: #e0e0e0;
+        margin: 0.5rem 0 0 0;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<div class="main-header">
+    <h1>📊 BullBearQA</h1>
+    <p>基于多Agent系统的智能股票分析平台 | Powered by DeepSeek</p>
+</div>
+""", unsafe_allow_html=True)
+
+with st.sidebar:
+    st.markdown("## 🔐 配置")
     
-    def __init__(self, llm):
-        super().__init__(llm, name="TechnicalAgent")
+    api_key = st.text_input(
+        "DeepSeek API Key",
+        type="password",
+        key="api_key_input"
+    )
     
-    def run(self, query: str) -> str:
-        """执行技术分析"""
-        try:
-            ticker = self._extract_ticker(query)
-            if not ticker:
-                return "无法识别股票代码"
-            
-            stock = yf.Ticker(ticker)
-            df = stock.history(period="1y")
-            
-            if df.empty:
-                return f"无法获取 {ticker} 的历史数据"
-            
-            indicators = self._calculate_indicators(df)
-            signals = self._generate_signals(indicators)
-            
-            prompt = self._build_english_prompt(ticker, indicators, signals)
-            
-            result = self._safe_llm_invoke(prompt)
-            
-            if "LLM call failed" in result:
-                return self._fallback_analysis(ticker, indicators, signals)
-            
-            return result
-            
-        except Exception as e:
-            return f"技术分析失败: {str(e)}"
+    if api_key:
+        st.success("✅ API Key 已设置")
     
-    def _build_english_prompt(self, ticker: str, indicators: dict, signals: dict) -> str:
-        """构建英文提示词 - 完全修复版"""
-        # 提取指标值
-        current_price = indicators.get('current_price', 0)
-        sma_20 = indicators.get('sma_20')
-        sma_50 = indicators.get('sma_50')
-        sma_200 = indicators.get('sma_200')
-        rsi = indicators.get('rsi')
-        bb_upper = indicators.get('bb_upper')
-        bb_lower = indicators.get('bb_lower')
-        
-        # 安全格式化（分别处理每个值）
-        def format_price(val):
-            return f"${val:.2f}" if val is not None else 'N/A'
-        
-        def format_number(val):
-            return f"{val:.1f}" if val is not None else 'N/A'
-        
-        return f"""You are a professional technical analyst. Provide a concise technical analysis of {ticker} in Chinese.
+    st.markdown("---")
+    st.markdown("## 📖 使用指南")
+    st.markdown("""
+**● 基本面分析**
+- "AAPL的PE怎么样？"
 
-Price Info:
-- Current Price: {format_price(current_price)}
-- SMA 20: {format_price(sma_20)}
-- SMA 50: {format_price(sma_50)}
-- SMA 200: {format_price(sma_200)}
+**● 技术面分析**
+- "NVDA的RSI是多少？"
 
-Momentum Indicators:
-- RSI(14): {format_number(rsi)} - {signals.get('rsi', 'N/A')}
-- MACD: {signals.get('macd', 'N/A')}
-
-Trend: {signals.get('trend', 'N/A')}
-
-Bollinger Bands:
-- Upper: {format_price(bb_upper)}
-- Lower: {format_price(bb_lower)}
-
-Please provide in Chinese (within 150 characters):
-1. Technical overview
-2. Short-term trend forecast
-3. Key support and resistance levels
-4. Trading recommendation
-
-Respond in professional but easy-to-understand Chinese."""
+**● 股票对比**
+- "比较AAPL和MSFT"
+    """)
     
-    def _fallback_analysis(self, ticker: str, indicators: dict, signals: dict) -> str:
-        """备用分析"""
-        current_price = indicators.get('current_price', 0)
-        rsi = indicators.get('rsi')
-        rsi_str = f"{rsi:.1f}" if rsi is not None else 'N/A'
-        
-        return f"""【技术分析 - {ticker}】
-
-当前价格: ${current_price:.2f}
-
-技术指标:
-- RSI: {rsi_str} ({signals.get('rsi', 'N/A')})
-- 趋势: {signals.get('trend', 'N/A')}
-- MACD: {signals.get('macd', 'N/A')}
-
-综合评价: 短期{'超买，建议观望' if signals.get('rsi') == '超买' else '超卖，可能反弹' if signals.get('rsi') == '超卖' else '震荡中'}，整体趋势{signals.get('trend', 'N/A')}。"""
+    st.markdown("---")
     
-    def _extract_ticker(self, query: str) -> str:
-        """提取股票代码"""
-        import re
-        
-        common_stocks = {
-            'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA',
-            'AMD', 'NFLX', 'TSM', 'V', 'JPM', 'BABA', 'MU'
-        }
-        
-        query_upper = query.upper()
-        
-        for stock in common_stocks:
-            if stock in query_upper:
-                return stock
-        
-        matches = re.findall(r'\b([A-Z]{2,5})\b', query_upper)
-        common_words = {'THE', 'RSI', 'PE', 'VS', 'HOW', 'WHAT'}
-        
-        for match in matches:
-            if match not in common_words:
-                return match
-        
-        return None
+    with st.expander("⚙️ 高级设置"):
+        show_routing = st.checkbox("显示路由信息", value=False)
+        show_timing = st.checkbox("显示执行时间", value=True)
     
-    def _calculate_indicators(self, df: pd.DataFrame) -> dict:
-        """计算技术指标"""
-        close = df['Close']
-        
-        sma_20 = close.rolling(20).mean()
-        sma_50 = close.rolling(50).mean()
-        sma_200 = close.rolling(200).mean()
-        
-        delta = close.diff()
-        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-        rs = gain / loss
-        rsi = 100 - (100 / (1 + rs))
-        
-        ema_12 = close.ewm(span=12).mean()
-        ema_26 = close.ewm(span=26).mean()
-        macd = ema_12 - ema_26
-        signal = macd.ewm(span=9).mean()
-        
-        bb_middle = close.rolling(20).mean()
-        bb_std = close.rolling(20).std()
-        bb_upper = bb_middle + (2 * bb_std)
-        bb_lower = bb_middle - (2 * bb_std)
+    if st.button("🗑️ 清除对话历史"):
+        st.session_state.messages = []
+        st.rerun()
+    
+    st.markdown("---")
+    st.markdown("### 💡 投资评分")
+    if 'last_score' in st.session_state:
+        score_data = st.session_state.last_score
+        st.metric("综合评分", f"{score_data['score']}/100", score_data['rating'])
+        st.progress(score_data['score'] / 100)
+    
+    st.markdown("---")
+    if 'paper_tracker' not in st.session_state:
+        st.session_state.paper_tracker = PaperTradingTracker()
+
+@st.cache_resource
+def get_components(api_key: str):
+    try:
+        llm = ChatOpenAI(
+            model="deepseek-chat",
+            openai_api_key=api_key,
+            openai_api_base="https://api.deepseek.com",
+            temperature=0.7
+        )
         
         return {
-            "current_price": float(close.iloc[-1]),
-            "sma_20": float(sma_20.iloc[-1]) if not pd.isna(sma_20.iloc[-1]) else None,
-            "sma_50": float(sma_50.iloc[-1]) if not pd.isna(sma_50.iloc[-1]) else None,
-            "sma_200": float(sma_200.iloc[-1]) if not pd.isna(sma_200.iloc[-1]) else None,
-            "rsi": float(rsi.iloc[-1]) if not pd.isna(rsi.iloc[-1]) else None,
-            "macd": float(macd.iloc[-1]) if not pd.isna(macd.iloc[-1]) else None,
-            "macd_signal": float(signal.iloc[-1]) if not pd.isna(signal.iloc[-1]) else None,
-            "bb_upper": float(bb_upper.iloc[-1]) if not pd.isna(bb_upper.iloc[-1]) else None,
-            "bb_lower": float(bb_lower.iloc[-1]) if not pd.isna(bb_lower.iloc[-1]) else None,
+            'router': QuestionRouter(llm),
+            'fundamental_agent': FundamentalAgent(llm),
+            'technical_agent': TechnicalAgent(llm),
+            'sentiment_agent': SentimentAgent(llm),
+            'comparison_agent': ComparisonAgent(llm),
+            'judge': ArenaJudge(llm),
+            'strategy_generator': StrategyGenerator(),
+            'options_recommender': OptionsRecommender()
         }
+    except Exception as e:
+        st.error(f"初始化失败: {str(e)}")
+        return None
+
+if 'messages' not in st.session_state:
+    st.session_state.messages = []
+
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+if api_key:
+    components = get_components(api_key)
     
-    def _generate_signals(self, indicators: dict) -> dict:
-        """生成交易信号"""
-        signals = {}
-        
-        rsi = indicators.get('rsi')
-        if rsi:
-            if rsi > 70:
-                signals['rsi'] = "超买"
-            elif rsi < 30:
-                signals['rsi'] = "超卖"
-            else:
-                signals['rsi'] = "中性"
-        
-        sma_50 = indicators.get('sma_50')
-        sma_200 = indicators.get('sma_200')
-        if sma_50 and sma_200:
-            signals['trend'] = "多头" if sma_50 > sma_200 else "空头"
-        
-        macd = indicators.get('macd')
-        macd_signal = indicators.get('macd_signal')
-        if macd and macd_signal:
-            signals['macd'] = "看涨" if macd > macd_signal else "看跌"
-        
-        return signals
+    if components:
+        if prompt := st.chat_input("请输入你的股票分析问题..."):
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            with st.chat_message("user"):
+                st.markdown(prompt)
+            
+            with st.chat_message("assistant"):
+                message_placeholder = st.empty()
+                start_time = time.time()
+                
+                try:
+                    routing_result = components['router'].route(prompt)
+                    agent_type = routing_result['agent_type']
+                    agent_outputs = {}
+                    
+                    selected_agent = {
+                        'fundamental': components['fundamental_agent'],
+                        'technical': components['technical_agent'],
+                        'sentiment': components['sentiment_agent'],
+                        'comparison': components['comparison_agent']
+                    }.get(agent_type)
+                    
+                    if selected_agent:
+                        output = selected_agent.run(prompt)
+                        agent_outputs[agent_type] = output
+                    
+                    final_response = components['judge'].synthesize(prompt, agent_outputs)
+                    score_data = components['judge'].create_investment_score(agent_outputs)
+                    st.session_state.last_score = score_data
+                    rating = score_data.get('rating', 'Hold')
+                    
+                    response_text = final_response
+                    if show_timing:
+                        response_text += f"\n\n⏱️ 执行时间: {time.time() - start_time:.2f}秒"
+                    
+                    message_placeholder.markdown(response_text)
+                    st.session_state.messages.append({"role": "assistant", "content": response_text})
+                    
+                    # 提取股票代码
+                    display_ticker = None
+                    display_tickers = routing_result.get('tickers', [])
+                    
+                    if not display_tickers:
+                        common_stocks = {
+                            'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA',
+                            'AMD', 'NFLX', 'MU', 'TSM', 'V', 'JPM'
+                        }
+                        
+                        for stock in common_stocks:
+                            if stock in prompt.upper():
+                                display_tickers = [stock]
+                                break
+                    
+                    if display_tickers:
+                        display_ticker = display_tickers[0]
+                    
+                    if display_ticker or len(display_tickers) >= 2:
+                        st.markdown("---")
+                        chart_generator = CandlestickChart()
+                        
+                        if len(display_tickers) >= 2:
+                            st.markdown("## 📈 股票走势对比")
+                            
+                            chart_period = st.selectbox(
+                                "📅 选择时间周期",
+                                ["1mo", "3mo", "6mo", "1y", "2y", "5y"],
+                                index=3,
+                                format_func=lambda x: {"1mo": "1个月", "3mo": "3个月", "6mo": "6个月", "1y": "1年", "2y": "2年", "5y": "5年"}[x],
+                                key=f"compare_{time.time()}"
+                            )
+                            
+                            fig = chart_generator.create_comparison_chart(display_tickers, chart_period)
+                            if fig:
+                                st.plotly_chart(fig, use_container_width=True)
+                                
+                                st.markdown("### 📊 当前价格对比")
+                                cols = st.columns(len(display_tickers))
+                                for i, t in enumerate(display_tickers):
+                                    try:
+                                        price_info = chart_generator.get_price_change(t)
+                                        if price_info and isinstance(price_info, dict):
+                                            with cols[i]:
+                                                change_color = "normal" if price_info.get('change', 0) >= 0 else "inverse"
+                                                st.metric(
+                                                    t,
+                                                    f"${price_info.get('current_price', 0):.2f}",
+                                                    delta=f"{price_info.get('change_pct', 0):+.2f}%",
+                                                    delta_color=change_color
+                                                )
+                                    except:
+                                        pass
+                        
+                        elif display_ticker:
+                            st.markdown("## 📈 股价走势分析")
+                            
+                            col1, col2, col3 = st.columns([2, 1, 1])
+                            
+                            with col1:
+                                chart_period = st.selectbox(
+                                    "📅 选择时间周期",
+                                    ["1mo", "3mo", "6mo", "1y", "2y", "5y"],
+                                    index=1,
+                                    format_func=lambda x: {"1mo": "1个月", "3mo": "3个月", "6mo": "6个月", "1y": "1年", "2y": "2年", "5y": "5年"}[x],
+                                    key=f"single_{time.time()}"
+                                )
+                            
+                            with col2:
+                                try:
+                                    price_info = chart_generator.get_price_change(display_ticker)
+                                    if price_info and isinstance(price_info, dict):
+                                        change_color = "normal" if price_info.get('change', 0) >= 0 else "inverse"
+                                        st.metric(
+                                            "当前价格",
+                                            f"${price_info.get('current_price', 0):.2f}",
+                                            delta=f"{price_info.get('change_pct', 0):+.2f}%",
+                                            delta_color=change_color
+                                        )
+                                except:
+                                    st.caption("价格获取失败")
+                            
+                            with col3:
+                                try:
+                                    if price_info and isinstance(price_info, dict):
+                                        st.metric(
+                                            "52周区间",
+                                            f"${price_info.get('low_52w', 0):.1f}",
+                                            delta=f"${price_info.get('high_52w', 0):.1f}"
+                                        )
+                                except:
+                                    pass
+                            
+                            fig = chart_generator.create_chart(display_ticker, chart_period)
+                            if fig:
+                                st.plotly_chart(fig, use_container_width=True)
+                            
+                            # 策略生成
+                            if display_ticker and len(display_tickers) <= 1:
+                                st.markdown("---")
+                                st.subheader("📋 可执行交易策略")
+                                
+                                rating_emoji = {'Buy': '🟢', 'Sell': '🔴', 'Hold': '🟡'}
+                                st.info(f"{rating_emoji.get(rating, '🟡')} **当前评级: {rating}**")
+                                
+                                risk_tolerance = st.select_slider(
+                                    "风险偏好",
+                                    ["low", "medium", "high"],
+                                    value="medium",
+                                    format_func=lambda x: {"low": "🐌 保守", "medium": "🎯 平衡", "high": "🚀 激进"}[x],
+                                    key=f"risk_{time.time()}"
+                                )
+                                
+                                strategy_rating = rating if rating in ['Buy', 'Sell'] else 'Buy'
+                                strategy = components['strategy_generator'].generate_strategy(
+                                    ticker=display_ticker,
+                                    rating=strategy_rating,
+                                    analysis_result=agent_outputs,
+                                    risk_tolerance=risk_tolerance
+                                )
+                                
+                                if strategy:
+                                    if rating == 'Hold':
+                                        st.warning("💡 当前评级为Hold，策略仅供参考")
+                                    
+                                    st.success(f"✅ 已生成 {strategy['action']} 策略")
+                                    
+                                    col1, col2, col3, col4 = st.columns(4)
+                                    with col1:
+                                        st.metric("入场价", f"${strategy['entry_price']:.2f}")
+                                    with col2:
+                                        gain = ((strategy['target_price']/strategy['entry_price']-1)*100)
+                                        st.metric("目标价", f"${strategy['target_price']:.2f}", delta=f"+{gain:.1f}%")
+                                    with col3:
+                                        loss = ((1-strategy['stop_loss']/strategy['entry_price'])*100)
+                                        st.metric("止损价", f"${strategy['stop_loss']:.2f}", delta=f"-{loss:.1f}%")
+                                    with col4:
+                                        st.metric("建议仓位", strategy['position_size'])
+                                    
+                                    with st.expander("📊 策略详情", expanded=True):
+                                        col1, col2 = st.columns(2)
+                                        with col1:
+                                            st.write("**风险回报比**")
+                                            st.info(f"1 : {strategy['risk_reward_ratio']}")
+                                        with col2:
+                                            st.write("**持仓周期**")
+                                            st.info(strategy['time_horizon'])
+                                    
+                                    st.write("**📝 交易订单**")
+                                    st.code(f"""股票: {strategy['ticker']}
+操作: {strategy['action']}
+入场价: ${strategy['entry_price']:.2f}
+目标价: ${strategy['target_price']:.2f}
+止损价: ${strategy['stop_loss']:.2f}
+仓位: {strategy['position_size']}""")
+                                    
+                                    if st.button("💾 保存", key=f"save_{time.time()}"):
+                                        trade_id = st.session_state.paper_tracker.add_trade(strategy)
+                                        st.success(f"✅ 已保存 #{trade_id}")
+                
+                except Exception as e:
+                    message_placeholder.error(f"❌ 错误: {str(e)}")
+                    with st.expander("详细错误"):
+                        st.code(traceback.format_exc())
+else:
+    st.info("👈 请输入 DeepSeek API Key")
+
+st.markdown("---")
+st.markdown("<div style='text-align:center;color:#666;'><p>⚠️ 免责声明：仅供参考，不构成投资建议</p></div>", unsafe_allow_html=True)

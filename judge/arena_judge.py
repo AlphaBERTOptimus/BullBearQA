@@ -25,7 +25,7 @@ class ArenaJudge:
             return "❌ 没有收到任何分析结果"
         
         # 简单拼接各Agent的输出
-        result = "# 🏆 Arena Judge 综合分析\n\n"
+        result = "# 🏆财判智能体综合分析\n\n"
         
         for agent_type, output in agent_outputs.items():
             result += f"{output}\n\n"

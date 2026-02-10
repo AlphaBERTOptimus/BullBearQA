@@ -1,29 +1,34 @@
-"""
-Agent基类 - 修复Tool导入问题
-"""
-from typing import Any, Dict, Optional
-from langchain_core.tools import BaseTool
-from pydantic import BaseModel, Field
+"""基础代理类"""
+from typing import Dict, Any, Optional
+from abc import ABC, abstractmethod
 
 
-class BaseAgent:
-    """所有Agent的基类"""
+class BaseAgent(ABC):
+    """所有代理的基类"""
     
-    def __init__(self, name: str, llm=None):
+    def __init__(self, name: str, description: str):
         self.name = name
-        self.llm = llm
+        self.description = description
     
-    def run(self, query: str) -> str:
+    @abstractmethod
+    def analyze(self, ticker: str, **kwargs) -> Dict[str, Any]:
         """
-        执行分析（子类需实现）
+        执行分析
         
         Args:
-            query: 用户查询
+            ticker: 股票代码
+            **kwargs: 其他参数
             
         Returns:
-            分析结果字符串
+            分析结果字典
         """
-        raise NotImplementedError("Subclass must implement run()")
+        pass
     
-    def __repr__(self):
-        return f"<{self.__class__.__name__}: {self.name}>"
+    def _handle_error(self, error: Exception, ticker: str) -> Dict[str, Any]:
+        """统一的错误处理"""
+        return {
+            "ticker": ticker,
+            "error": str(error),
+            "agent": self.name,
+            "status": "failed"
+        }

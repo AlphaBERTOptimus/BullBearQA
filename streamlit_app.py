@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Version: 2.3.1 - All fixes applied
+# Version: 2.4.0 - Final
 
 import os
 os.environ['PYTHONIOENCODING'] = 'utf-8'
@@ -72,12 +72,19 @@ with st.sidebar:
     st.markdown("""
 **● 基本面分析**
 - "AAPL的PE怎么样？"
+- "分析TSLA的财务状况"
 
 **● 技术面分析**
 - "NVDA的RSI是多少？"
+- "MSFT的技术指标如何？"
+
+**● 市场情绪**
+- "META最近的新闻是什么？"
+- "市场对GOOGL的看法"
 
 **● 股票对比**
 - "比较AAPL和MSFT"
+- "NVDA vs AMD 哪个更好？"
     """)
     
     st.markdown("---")
@@ -327,7 +334,8 @@ if api_key:
 入场价: ${strategy['entry_price']:.2f}
 目标价: ${strategy['target_price']:.2f}
 止损价: ${strategy['stop_loss']:.2f}
-仓位: {strategy['position_size']}""")
+仓位: {strategy['position_size']}
+理由: {strategy['reason']}""")
                                     
                                     if st.button("💾 保存", key=f"save_{time.time()}"):
                                         trade_id = st.session_state.paper_tracker.add_trade(strategy)
@@ -339,6 +347,31 @@ if api_key:
                         st.code(traceback.format_exc())
 else:
     st.info("👈 请输入 DeepSeek API Key")
+    
+    st.markdown("### 💡 示例问题")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("""
+        **基本面分析**
+        - AAPL的PE怎么样？
+        - 分析TSLA的财务状况
+        
+        **技术面分析**
+        - NVDA的RSI是多少？
+        - MSFT的技术指标如何？
+        """)
+    
+    with col2:
+        st.markdown("""
+        **市场情绪**
+        - META最近的新闻是什么？
+        - 市场对GOOGL的看法
+        
+        **股票对比**
+        - 比较AAPL和MSFT
+        - NVDA vs AMD 哪个更好？
+        """)
 
 st.markdown("---")
 st.markdown("<div style='text-align:center;color:#666;'><p>⚠️ 免责声明：仅供参考，不构成投资建议</p></div>", unsafe_allow_html=True)

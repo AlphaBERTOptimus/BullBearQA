@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Version: 2.1.1 - Fixed: Encoding issues & UI improvements
+# Version: 2.2.0 - Fixed: All import errors & dependencies
 
 # ============================================
 # 强制 UTF-8 编码设置（必须在所有 import 之前）
@@ -12,21 +12,59 @@ os.environ['PYTHONIOENCODING'] = 'utf-8'
 # 正常的导入
 # ============================================
 import streamlit as st
-from langchain_openai import ChatOpenAI
-from agents.fundamental_agent import FundamentalAgent
-from agents.technical_agent import TechnicalAgent
-from agents.sentiment_agent import SentimentAgent
-from agents.comparison_agent import ComparisonAgent
-from router.question_router import QuestionRouter
-from judge.arena_judge import ArenaJudge
 import time
 import traceback
 
-# Phase 1: 新增导入
-from trading.strategy_generator import StrategyGenerator
-from trading.options_recommender import OptionsRecommender
-from trading.paper_trading import PaperTradingTracker
-from visualization.candlestick_chart import CandlestickChart
+# 尝试导入 langchain，如果失败给出友好提示
+try:
+    from langchain_openai import ChatOpenAI
+except ImportError:
+    st.error("❌ 缺少 langchain_openai 包，正在尝试安装...")
+    import subprocess
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "langchain-openai"])
+    from langchain_openai import ChatOpenAI
+
+# 导入自定义模块（使用 try-except 处理）
+try:
+    from agents.fundamental_agent import FundamentalAgent
+    from agents.technical_agent import TechnicalAgent
+    from agents.sentiment_agent import SentimentAgent
+    from agents.comparison_agent import ComparisonAgent
+except ImportError as e:
+    st.error(f"❌ 导入 agents 模块失败: {e}")
+    st.info("请确保所有 agents 文件都存在且 __init__.py 已创建")
+    st.stop()
+
+try:
+    from router.question_router import QuestionRouter
+except ImportError as e:
+    st.error(f"❌ 导入 router 模块失败: {e}")
+    st.info("请确保 router 文件夹存在且包含 question_router.py")
+    st.stop()
+
+try:
+    from judge.arena_judge import ArenaJudge
+except ImportError as e:
+    st.error(f"❌ 导入 judge 模块失败: {e}")
+    st.info("请确保 judge 文件夹存在且包含 arena_judge.py")
+    st.stop()
+
+# Phase 1: 新增导入（可选模块，如果不存在则跳过）
+try:
+    from trading.strategy_generator import StrategyGenerator
+    from trading.options_recommender import OptionsRecommender
+    from trading.paper_trading import PaperTradingTracker
+    TRADING_ENABLED = True
+except ImportError:
+    TRADING_ENABLED = False
+    st.warning("⚠️ trading 模块未找到，交易策略功能将被禁用")
+
+try:
+    from visualization.candlestick_chart import CandlestickChart
+    VISUALIZATION_ENABLED = True
+except ImportError:
+    VISUALIZATION_ENABLED = False
+    st.warning("⚠️ visualization 模块未找到，K线图功能将被禁用")
 
 # ============================================
 # 页面配置
@@ -122,11 +160,14 @@ BullBearQA 支持以下类型的问题：
 **● 股票对比**
 - "比较AAPL和MSFT"
 - "NVDA vs AMD 哪个更好？"
-
+    """)
+    
+    if TRADING_ENABLED:
+        st.markdown("""
 **💡 自动生成交易策略**
 - 任何股票查询都会生成可执行策略
 - 支持保存到模拟盘追踪盈亏
-    """)
+        """)
     
     st.markdown("---")
     
@@ -165,54 +206,55 @@ BullBearQA 支持以下类型的问题：
                 st.text(f"{key}: {value:+d}")
     
     # ============================================
-    # 模拟交易追踪
+    # 模拟交易追踪（仅当 trading 模块可用时）
     # ============================================
-    st.markdown("---")
-    st.sidebar.subheader("📊 模拟交易追踪")
-    
-    # 初始化tracker
-    if 'paper_tracker' not in st.session_state:
-        st.session_state.paper_tracker = PaperTradingTracker()
-    
-    tracker = st.session_state.paper_tracker
-    
-    # 显示统计
-    stats = tracker.get_performance_stats()
-    if stats:
-        col1, col2 = st.sidebar.columns(2)
-        with col1:
-            st.metric("胜率", f"{stats['win_rate']}%")
-        with col2:
-            st.metric("总交易", stats['total_trades'])
+    if TRADING_ENABLED:
+        st.markdown("---")
+        st.sidebar.subheader("📊 模拟交易追踪")
         
-        with st.sidebar.expander("📈 详细统计"):
-            st.write(f"✅ 盈利次数: {stats['wins']}")
-            st.write(f"❌ 亏损次数: {stats['losses']}")
-            st.write(f"💰 平均盈利: {stats['avg_win']}%")
-            st.write(f"📉 平均亏损: {stats['avg_loss']}%")
-            st.write(f"🎯 最大盈利: {stats['max_win']}%")
-            st.write(f"⚠️ 最大亏损: {stats['max_loss']}%")
-    else:
-        st.sidebar.info("还没有交易记录\n试试生成策略并保存！")
-    
-    # 查看所有交易
-    if st.sidebar.checkbox("查看交易记录"):
-        all_trades = tracker.get_all_trades()
-        if all_trades:
-            for trade in reversed(all_trades[-5:]):
-                status_emoji = {
-                    'OPEN': '🟡',
-                    'CLOSED_WIN': '✅',
-                    'CLOSED_LOSS': '❌',
-                    'CLOSED_BREAK_EVEN': '⚪'
-                }
-                emoji = status_emoji.get(trade['status'], '❓')
-                
-                st.sidebar.text(f"{emoji} #{trade['id']} {trade['ticker']} {trade['action']}")
-                if trade.get('pnl_pct'):
-                    st.sidebar.text(f"   {trade['pnl_pct']:+.1f}%")
+        # 初始化tracker
+        if 'paper_tracker' not in st.session_state:
+            st.session_state.paper_tracker = PaperTradingTracker()
+        
+        tracker = st.session_state.paper_tracker
+        
+        # 显示统计
+        stats = tracker.get_performance_stats()
+        if stats:
+            col1, col2 = st.sidebar.columns(2)
+            with col1:
+                st.metric("胜率", f"{stats['win_rate']}%")
+            with col2:
+                st.metric("总交易", stats['total_trades'])
+            
+            with st.sidebar.expander("📈 详细统计"):
+                st.write(f"✅ 盈利次数: {stats['wins']}")
+                st.write(f"❌ 亏损次数: {stats['losses']}")
+                st.write(f"💰 平均盈利: {stats['avg_win']}%")
+                st.write(f"📉 平均亏损: {stats['avg_loss']}%")
+                st.write(f"🎯 最大盈利: {stats['max_win']}%")
+                st.write(f"⚠️ 最大亏损: {stats['max_loss']}%")
         else:
-            st.sidebar.write("暂无记录")
+            st.sidebar.info("还没有交易记录\n试试生成策略并保存！")
+        
+        # 查看所有交易
+        if st.sidebar.checkbox("查看交易记录"):
+            all_trades = tracker.get_all_trades()
+            if all_trades:
+                for trade in reversed(all_trades[-5:]):
+                    status_emoji = {
+                        'OPEN': '🟡',
+                        'CLOSED_WIN': '✅',
+                        'CLOSED_LOSS': '❌',
+                        'CLOSED_BREAK_EVEN': '⚪'
+                    }
+                    emoji = status_emoji.get(trade['status'], '❓')
+                    
+                    st.sidebar.text(f"{emoji} #{trade['id']} {trade['ticker']} {trade['action']}")
+                    if trade.get('pnl_pct'):
+                        st.sidebar.text(f"   {trade['pnl_pct']:+.1f}%")
+            else:
+                st.sidebar.write("暂无记录")
 
 # ============================================
 # 初始化组件（带缓存）
@@ -228,27 +270,28 @@ def get_components(api_key: str):
             temperature=0.7
         )
         
-        router = QuestionRouter(llm)
-        fundamental_agent = FundamentalAgent(llm)
-        technical_agent = TechnicalAgent(llm)
-        sentiment_agent = SentimentAgent(llm)
-        comparison_agent = ComparisonAgent(llm)
-        judge = ArenaJudge(llm)
-        strategy_generator = StrategyGenerator()
-        options_recommender = OptionsRecommender()
-        
-        return {
-            'router': router,
-            'fundamental_agent': fundamental_agent,
-            'technical_agent': technical_agent,
-            'sentiment_agent': sentiment_agent,
-            'comparison_agent': comparison_agent,
-            'judge': judge,
-            'strategy_generator': strategy_generator,
-            'options_recommender': options_recommender
+        components = {
+            'router': QuestionRouter(llm),
+            'fundamental_agent': FundamentalAgent(llm),
+            'technical_agent': TechnicalAgent(llm),
+            'sentiment_agent': SentimentAgent(llm),
+            'comparison_agent': ComparisonAgent(llm),
+            'judge': ArenaJudge(llm),
         }
+        
+        # 添加可选组件
+        if TRADING_ENABLED:
+            components['strategy_generator'] = StrategyGenerator()
+            components['options_recommender'] = OptionsRecommender()
+        
+        return components
+        
     except Exception as e:
         st.error(f"初始化组件失败: {str(e)}")
+        st.info("请检查:")
+        st.info("1. API Key 是否正确")
+        st.info("2. 网络连接是否正常")
+        st.info("3. DeepSeek API 服务是否可用")
         return None
 
 # ============================================
@@ -294,7 +337,9 @@ if api_key:
         sentiment_agent = components['sentiment_agent']
         comparison_agent = components['comparison_agent']
         judge = components['judge']
-        tracker = st.session_state.paper_tracker
+        
+        if TRADING_ENABLED:
+            tracker = st.session_state.paper_tracker
         
         if prompt := st.chat_input("请输入你的股票分析问题..."):
             # 添加用户消息
@@ -355,9 +400,9 @@ if api_key:
                     st.session_state.messages.append({"role": "assistant", "content": response_text})
                     
                     # ============================================
-                    # 6. K线图可视化
+                    # 6. K线图可视化（仅当 visualization 模块可用时）
                     # ============================================
-                    if ticker or (tickers and len(tickers) >= 2):
+                    if VISUALIZATION_ENABLED and (ticker or (tickers and len(tickers) >= 2)):
                         st.markdown("---")
                         
                         chart_generator = CandlestickChart()
@@ -477,9 +522,9 @@ if api_key:
                                 st.warning("⚠️ 无法获取股价数据，请稍后重试或检查股票代码")
                     
                     # ============================================
-                    # 7. 交易策略生成
+                    # 7. 交易策略生成（仅当 trading 模块可用时）
                     # ============================================
-                    if ticker:
+                    if TRADING_ENABLED and ticker:
                         st.markdown("---")
                         st.subheader("📋 可执行交易策略")
                         
@@ -556,7 +601,7 @@ if api_key:
                             
                             st.code(order_text, language="text")
                             
-                            # 保存到模拟盘（修复了刷新bug）
+                            # 保存到模拟盘
                             col1, col2 = st.columns([1, 3])
                             with col1:
                                 if st.button("💾 保存到模拟盘", type="primary", key=f"save_{ticker}_{time.time()}"):
@@ -667,9 +712,10 @@ else:
         **股票对比**
         - 比较AAPL和MSFT
         - NVDA vs AMD 哪个更好？
-        
-        **💡 所有查询都会生成可追踪的交易策略！**
         """)
+    
+    if TRADING_ENABLED:
+        st.markdown("**💡 所有查询都会生成可追踪的交易策略！**")
 
 # ============================================
 # 页脚

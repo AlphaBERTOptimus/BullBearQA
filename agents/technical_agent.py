@@ -17,25 +17,71 @@ class TechnicalAgent(BaseAgent):
             if not ticker:
                 return "无法识别股票代码"
             
-            # 获取历史数据
             stock = yf.Ticker(ticker)
             df = stock.history(period="1y")
             
             if df.empty:
                 return f"无法获取 {ticker} 的历史数据"
             
-            # 计算技术指标
             indicators = self._calculate_indicators(df)
             signals = self._generate_signals(indicators)
             
-            # 构建提示词
-            prompt = self._build_analysis_prompt(ticker, indicators, signals)
+            prompt = self._build_english_prompt(ticker, indicators, signals)
             
-            # 调用LLM
-            return self._safe_llm_invoke(prompt)
+            result = self._safe_llm_invoke(prompt)
+            
+            if "LLM call failed" in result:
+                return self._fallback_analysis(ticker, indicators, signals)
+            
+            return result
             
         except Exception as e:
             return f"技术分析失败: {str(e)}"
+    
+    def _build_english_prompt(self, ticker: str, indicators: dict, signals: dict) -> str:
+        """构建英文提示词"""
+        sma_20 = indicators.get('sma_20')
+        sma_50 = indicators.get('sma_50')
+        sma_200 = indicators.get('sma_200')
+        
+        return f"""You are a professional technical analyst. Provide a concise technical analysis of {ticker} in Chinese.
+
+Price Info:
+- Current Price: ${indicators['current_price']:.2f}
+- SMA 20: ${sma_20:.2f if sma_20 else 'N/A'}
+- SMA 50: ${sma_50:.2f if sma_50 else 'N/A'}
+- SMA 200: ${sma_200:.2f if sma_200 else 'N/A'}
+
+Momentum Indicators:
+- RSI(14): {indicators.get('rsi', 'N/A')} - {signals.get('rsi', 'N/A')}
+- MACD: {signals.get('macd', 'N/A')}
+
+Trend: {signals.get('trend', 'N/A')}
+
+Bollinger Bands:
+- Upper: ${indicators.get('bb_upper', 'N/A')}
+- Lower: ${indicators.get('bb_lower', 'N/A')}
+
+Please provide in Chinese (within 150 characters):
+1. Technical overview
+2. Short-term trend forecast
+3. Key support and resistance levels
+4. Trading recommendation
+
+Respond in professional but easy-to-understand Chinese."""
+    
+    def _fallback_analysis(self, ticker: str, indicators: dict, signals: dict) -> str:
+        """备用分析"""
+        return f"""【技术分析 - {ticker}】
+
+当前价格: ${indicators['current_price']:.2f}
+
+技术指标:
+- RSI: {indicators.get('rsi', 'N/A')} ({signals.get('rsi', 'N/A')})
+- 趋势: {signals.get('trend', 'N/A')}
+- MACD: {signals.get('macd', 'N/A')}
+
+综合评价: 短期{'超买，建议观望' if signals.get('rsi') == '超买' else '超卖，可能反弹' if signals.get('rsi') == '超卖' else '震荡中'}，整体趋势{signals.get('trend', 'N/A')}。"""
     
     def _extract_ticker(self, query: str) -> str:
         """提取股票代码"""
@@ -65,25 +111,21 @@ class TechnicalAgent(BaseAgent):
         """计算技术指标"""
         close = df['Close']
         
-        # 移动平均
         sma_20 = close.rolling(20).mean()
         sma_50 = close.rolling(50).mean()
         sma_200 = close.rolling(200).mean()
         
-        # RSI
         delta = close.diff()
         gain = (delta.where(delta > 0, 0)).rolling(14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
         rs = gain / loss
         rsi = 100 - (100 / (1 + rs))
         
-        # MACD
         ema_12 = close.ewm(span=12).mean()
         ema_26 = close.ewm(span=26).mean()
         macd = ema_12 - ema_26
         signal = macd.ewm(span=9).mean()
         
-        # 布林带
         bb_middle = close.rolling(20).mean()
         bb_std = close.rolling(20).std()
         bb_upper = bb_middle + (2 * bb_std)
@@ -125,35 +167,3 @@ class TechnicalAgent(BaseAgent):
             signals['macd'] = "看涨" if macd > macd_signal else "看跌"
         
         return signals
-    
-    def _build_analysis_prompt(self, ticker: str, indicators: dict, signals: dict) -> str:
-        """构建分析提示词"""
-        sma_20 = indicators.get('sma_20')
-        sma_50 = indicators.get('sma_50')
-        sma_200 = indicators.get('sma_200')
-        
-        return f"""你是专业的技术分析师。请对 {ticker} 进行简明的技术分析。
-
-价格信息:
-- 当前价格: ${indicators['current_price']:.2f}
-- 20日均线: ${sma_20:.2f if sma_20 else 'N/A'}
-- 50日均线: ${sma_50:.2f if sma_50 else 'N/A'}
-- 200日均线: ${sma_200:.2f if sma_200 else 'N/A'}
-
-动量指标:
-- RSI(14): {indicators.get('rsi', 'N/A')} - {signals.get('rsi', 'N/A')}
-- MACD: {signals.get('macd', 'N/A')}
-
-趋势: {signals.get('trend', 'N/A')}
-
-布林带:
-- 上轨: ${indicators.get('bb_upper', 'N/A')}
-- 下轨: ${indicators.get('bb_lower', 'N/A')}
-
-请提供简洁分析(控制在150字以内):
-1. 技术面综合评价
-2. 短期走势预判
-3. 关键支撑位和阻力位
-4. 交易建议
-
-用专业但易懂的中文回答。"""

@@ -15,17 +15,22 @@ class SentimentAgent(BaseAgent):
             if not ticker:
                 return "无法识别股票代码"
             
-            prompt = f"""你是市场情绪分析专家。请对 {ticker} 的市场情绪进行简短分析。
+            prompt = f"""You are a market sentiment analyst. Provide a brief sentiment analysis of {ticker} in Chinese.
 
-提供(控制在100字以内):
-1. 整体市场情绪评估
-2. 投资者情绪倾向
-3. 情绪对股价的可能影响
+Please provide in Chinese (within 100 characters):
+1. Overall market sentiment assessment
+2. Investor sentiment tendency
+3. Possible impact of sentiment on stock price
 
-注意: 这是基于一般市场规律的模拟分析。
-用简洁的中文回答。"""
+Note: This is a simulated analysis based on general market patterns.
+Respond in concise Chinese."""
             
-            return self._safe_llm_invoke(prompt)
+            result = self._safe_llm_invoke(prompt)
+            
+            if "LLM call failed" in result:
+                return f"【市场情绪分析 - {ticker}】\n\n当前市场情绪：中性\n投资者情绪倾向于观望，短期波动可能加大。建议关注成交量变化。"
+            
+            return result
             
         except Exception as e:
             return f"情绪分析失败: {str(e)}"

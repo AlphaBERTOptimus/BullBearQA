@@ -40,27 +40,44 @@ class TechnicalAgent(BaseAgent):
     
     def _build_english_prompt(self, ticker: str, indicators: dict, signals: dict) -> str:
         """构建英文提示词"""
+        # 安全提取值
+        current_price = indicators.get('current_price', 0)
         sma_20 = indicators.get('sma_20')
         sma_50 = indicators.get('sma_50')
         sma_200 = indicators.get('sma_200')
+        rsi = indicators.get('rsi')
+        bb_upper = indicators.get('bb_upper')
+        bb_lower = indicators.get('bb_lower')
         
+        # 格式化函数
+        def fmt_price(val):
+            if val is None:
+                return 'N/A'
+            return f"${val:.2f}"
+        
+        def fmt_num(val):
+            if val is None:
+                return 'N/A'
+            return f"{val:.1f}"
+        
+        # 构建提示词
         return f"""You are a professional technical analyst. Provide a concise technical analysis of {ticker} in Chinese.
 
 Price Info:
-- Current Price: ${indicators['current_price']:.2f}
-- SMA 20: ${sma_20:.2f if sma_20 else 'N/A'}
-- SMA 50: ${sma_50:.2f if sma_50 else 'N/A'}
-- SMA 200: ${sma_200:.2f if sma_200 else 'N/A'}
+- Current Price: {fmt_price(current_price)}
+- SMA 20: {fmt_price(sma_20)}
+- SMA 50: {fmt_price(sma_50)}
+- SMA 200: {fmt_price(sma_200)}
 
 Momentum Indicators:
-- RSI(14): {indicators.get('rsi', 'N/A')} - {signals.get('rsi', 'N/A')}
+- RSI(14): {fmt_num(rsi)} - {signals.get('rsi', 'N/A')}
 - MACD: {signals.get('macd', 'N/A')}
 
 Trend: {signals.get('trend', 'N/A')}
 
 Bollinger Bands:
-- Upper: ${indicators.get('bb_upper', 'N/A')}
-- Lower: ${indicators.get('bb_lower', 'N/A')}
+- Upper: {fmt_price(bb_upper)}
+- Lower: {fmt_price(bb_lower)}
 
 Please provide in Chinese (within 150 characters):
 1. Technical overview
@@ -72,12 +89,17 @@ Respond in professional but easy-to-understand Chinese."""
     
     def _fallback_analysis(self, ticker: str, indicators: dict, signals: dict) -> str:
         """备用分析"""
+        current_price = indicators.get('current_price', 0)
+        rsi = indicators.get('rsi')
+        
+        rsi_str = f"{rsi:.1f}" if rsi is not None else 'N/A'
+        
         return f"""【技术分析 - {ticker}】
 
-当前价格: ${indicators['current_price']:.2f}
+当前价格: ${current_price:.2f}
 
 技术指标:
-- RSI: {indicators.get('rsi', 'N/A')} ({signals.get('rsi', 'N/A')})
+- RSI: {rsi_str} ({signals.get('rsi', 'N/A')})
 - 趋势: {signals.get('trend', 'N/A')}
 - MACD: {signals.get('macd', 'N/A')}
 
@@ -89,7 +111,7 @@ Respond in professional but easy-to-understand Chinese."""
         
         common_stocks = {
             'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA',
-            'AMD', 'NFLX', 'TSM', 'V', 'JPM', 'BABA'
+            'AMD', 'NFLX', 'TSM', 'V', 'JPM', 'BABA', 'MU'
         }
         
         query_upper = query.upper()
@@ -99,7 +121,7 @@ Respond in professional but easy-to-understand Chinese."""
                 return stock
         
         matches = re.findall(r'\b([A-Z]{2,5})\b', query_upper)
-        common_words = {'THE', 'RSI', 'PE', 'VS', 'HOW'}
+        common_words = {'THE', 'RSI', 'PE', 'VS', 'HOW', 'WHAT'}
         
         for match in matches:
             if match not in common_words:

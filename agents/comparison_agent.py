@@ -16,7 +16,6 @@ class ComparisonAgent(BaseAgent):
             if len(tickers) < 2:
                 return "需要至少2个股票代码进行对比"
             
-            # 获取数据
             comparison_data = {}
             for ticker in tickers:
                 try:
@@ -40,14 +39,56 @@ class ComparisonAgent(BaseAgent):
                         'div_yield': 0
                     }
             
-            # 构建提示词
-            prompt = self._build_comparison_prompt(comparison_data)
+            prompt = self._build_english_prompt(comparison_data)
             
-            # 调用LLM
-            return self._safe_llm_invoke(prompt)
+            result = self._safe_llm_invoke(prompt)
+            
+            if "LLM call failed" in result:
+                return self._fallback_comparison(comparison_data)
+            
+            return result
             
         except Exception as e:
             return f"对比分析失败: {str(e)}"
+    
+    def _build_english_prompt(self, data: dict) -> str:
+        """构建英文提示词"""
+        lines = ["Please provide a concise comparison of the following stocks in Chinese:\n"]
+        
+        for ticker, info in data.items():
+            lines.append(f"\n{ticker} ({info['name']})")
+            
+            pe = info['pe']
+            lines.append(f"- P/E: {pe:.2f}" if pe else "- P/E: N/A")
+            
+            roe = info['roe']
+            lines.append(f"- ROE: {roe*100:.1f}%" if roe else "- ROE: N/A")
+            
+            mcap = info['market_cap']
+            lines.append(f"- Market Cap: ${mcap/1e9:.1f}B" if mcap else "- Market Cap: N/A")
+        
+        lines.append("\n\nPlease provide in Chinese (within 150 characters):")
+        lines.append("1. Core advantages of each stock")
+        lines.append("2. Valuation comparison")
+        lines.append("3. Investment recommendation")
+        lines.append("\nRespond in concise Chinese.")
+        
+        return "\n".join(lines)
+    
+    def _fallback_comparison(self, data: dict) -> str:
+        """备用对比分析"""
+        lines = ["【股票对比分析】\n"]
+        
+        for ticker, info in data.items():
+            pe = info['pe']
+            roe = info['roe']
+            lines.append(f"\n{ticker}:")
+            lines.append(f"- PE: {pe:.2f}" if pe else "- PE: N/A")
+            lines.append(f"- ROE: {roe*100:.1f}%" if roe else "- ROE: N/A")
+        
+        lines.append("\n综合评价: 建议根据个人风险偏好和投资目标选择。")
+        
+        return "\n".join(lines)
     
     def _extract_tickers(self, query: str) -> list:
         """提取多个股票代码"""
@@ -72,28 +113,4 @@ class ComparisonAgent(BaseAgent):
                 if match not in common_words:
                     found.append(match)
         
-        return list(dict.fromkeys(found))  # 去重
-    
-    def _build_comparison_prompt(self, data: dict) -> str:
-        """构建对比提示词"""
-        lines = ["请对以下股票进行简明对比:\n"]
-        
-        for ticker, info in data.items():
-            lines.append(f"\n{ticker} ({info['name']})")
-            
-            pe = info['pe']
-            lines.append(f"- PE: {pe:.2f}" if pe else "- PE: N/A")
-            
-            roe = info['roe']
-            lines.append(f"- ROE: {roe*100:.1f}%" if roe else "- ROE: N/A")
-            
-            mcap = info['market_cap']
-            lines.append(f"- 市值: ${mcap/1e9:.1f}B" if mcap else "- 市值: N/A")
-        
-        lines.append("\n\n请提供简洁对比(控制在150字以内):")
-        lines.append("1. 各股核心优势")
-        lines.append("2. 估值对比")
-        lines.append("3. 投资建议")
-        lines.append("\n用简洁的中文回答。")
-        
-        return "\n".join(lines)
+        return list(dict.fromkeys(found))

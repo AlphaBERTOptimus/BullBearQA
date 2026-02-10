@@ -1,148 +1,129 @@
-"""
-股票对比分析Agent
-"""
-from typing import List, Optional
-from agents.base_agent import BaseAgent
-from tools.stock_data_tool import StockDataTool
+"""对比分析代理"""
+from typing import Dict, Any, List
+import yfinance as yf
+import pandas as pd
+from .base_agent import BaseAgent
+from .technical_agent import TechnicalAgent
+from .fundamental_agent import FundamentalAgent
 
 
 class ComparisonAgent(BaseAgent):
-    """股票对比分析师Agent"""
+    """对比分析代理 - 比较多个股票"""
     
-    def __init__(self, llm=None):
-        super().__init__(name="Comparison Analyst", llm=llm)
-        self.stock_tool = StockDataTool()
+    def __init__(self):
+        super().__init__(
+            name="ComparisonAgent",
+            description="对比多个股票的技术面和基本面指标"
+        )
+        self.tech_agent = TechnicalAgent()
+        self.fund_agent = FundamentalAgent()
     
-    def run(self, query: str) -> str:
+    def analyze(self, tickers: List[str], **kwargs) -> Dict[str, Any]:
         """
-        执行对比分析
+        对比多个股票
         
         Args:
-            query: 用户查询
+            tickers: 股票代码列表
             
         Returns:
             对比分析结果
         """
-        tickers = self._extract_tickers(query)
-        
-        if len(tickers) < 2:
-            return "❌ 需要至少两个股票代码进行对比"
-        
-        # 获取所有股票数据
-        stocks_data = {}
-        for ticker in tickers:
-            data = self.stock_tool.get_stock_data(ticker)
-            if data:
-                stocks_data[ticker] = data
-        
-        if len(stocks_data) < 2:
-            return "❌ 无法获取足够的股票数据进行对比"
-        
-        return self._generate_comparison_report(stocks_data)
+        try:
+            if not tickers or len(tickers) < 2:
+                return {
+                    "error": "需要至少2个股票代码进行对比",
+                    "agent": self.name,
+                    "status": "failed"
+                }
+            
+            # 收集所有股票数据
+            comparison_data = {}
+            for ticker in tickers:
+                tech_data = self.tech_agent.analyze(ticker)
+                fund_data = self.fund_agent.analyze(ticker)
+                
+                comparison_data[ticker] = {
+                    "technical": tech_data,
+                    "fundamental": fund_data
+                }
+            
+            # 生成对比表
+            comparison_table = self._create_comparison_table(comparison_data)
+            
+            # 生成排名
+            rankings = self._generate_rankings(comparison_data)
+            
+            return {
+                "tickers": tickers,
+                "agent": self.name,
+                "status": "success",
+                "comparison_data": comparison_data,
+                "comparison_table": comparison_table,
+                "rankings": rankings,
+                "summary": self._generate_summary(rankings)
+            }
+            
+        except Exception as e:
+            return self._handle_error(e, ", ".join(tickers))
     
-    def _extract_tickers(self, query: str) -> List[str]:
-        """从查询中提取多个股票代码"""
-        import re
+    def _create_comparison_table(self, data: Dict[str, Any]) -> pd.DataFrame:
+        """创建对比表格"""
+        rows = []
         
-        # 匹配所有大写字母组合
-        matches = re.findall(r'\b([A-Z]{1,5})\b', query.upper())
+        for ticker, info in data.items():
+            tech = info.get('technical', {})
+            fund = info.get('fundamental', {})
+            
+            row = {
+                "股票代码": ticker,
+                "公司名称": fund.get('company_name', 'N/A'),
+                "当前价格": tech.get('indicators', {}).get('current_price'),
+                "PE比率": fund.get('metrics', {}).get('pe_ratio'),
+                "ROE": fund.get('metrics', {}).get('roe'),
+                "RSI": tech.get('indicators', {}).get('rsi'),
+                "趋势": tech.get('signals', {}).get('trend'),
+                "估值": fund.get('valuation'),
+            }
+            rows.append(row)
         
-        # 过滤常见非股票代码词
-        exclude = ['VS', 'OR', 'AND', 'THE', 'IS', 'ARE', 'COMPARE']
-        tickers = [m for m in matches if m not in exclude]
-        
-        return list(set(tickers))[:5]  # 最多5个
+        return pd.DataFrame(rows)
     
-    def _generate_comparison_report(self, stocks_data: dict) -> str:
-        """生成对比报告"""
-        tickers = list(stocks_data.keys())
+    def _generate_rankings(self, data: Dict[str, Any]) -> Dict[str, List[str]]:
+        """生成排名"""
+        rankings = {}
         
-        report = f"""
-## ⚖️ 股票对比分析
-
-对比股票: {', '.join(tickers)}
-
-### 📊 估值对比
-
-| 指标 | {' | '.join(tickers)} |
-|------|{'|'.join(['----' for _ in tickers])}|
-"""
+        # 按PE比率排名（越低越好）
+        pe_ranking = []
+        for ticker, info in data.items():
+            pe = info.get('fundamental', {}).get('metrics', {}).get('pe_ratio')
+            if pe:
+                pe_ranking.append((ticker, pe))
         
-        # PE对比
-        pe_row = "| P/E比率 |"
-        for ticker in tickers:
-            pe = stocks_data[ticker].get('pe_ratio', 'N/A')
-            pe_str = f"{pe:.2f}" if pe != 'N/A' and isinstance(pe, (int, float)) else 'N/A'
-            pe_row += f" {pe_str} |"
-        report += pe_row + "\n"
+        pe_ranking.sort(key=lambda x: x[1])
+        rankings['PE比率排名'] = [ticker for ticker, _ in pe_ranking]
         
-        # ROE对比
-        roe_row = "| ROE |"
-        for ticker in tickers:
-            roe = stocks_data[ticker].get('roe', 'N/A')
-            if roe != 'N/A' and isinstance(roe, (int, float)):
-                roe_pct = roe * 100 if roe < 1 else roe
-                roe_str = f"{roe_pct:.2f}%"
-            else:
-                roe_str = 'N/A'
-            roe_row += f" {roe_str} |"
-        report += roe_row + "\n"
+        # 按ROE排名（越高越好）
+        roe_ranking = []
+        for ticker, info in data.items():
+            roe = info.get('fundamental', {}).get('metrics', {}).get('roe')
+            if roe:
+                roe_ranking.append((ticker, roe))
         
-        # 市值对比
-        mcap_row = "| 市值 |"
-        for ticker in tickers:
-            mcap = stocks_data[ticker].get('market_cap', 'N/A')
-            mcap_str = self.stock_tool.format_value(mcap) if mcap != 'N/A' else 'N/A'
-            mcap_row += f" {mcap_str} |"
-        report += mcap_row + "\n"
+        roe_ranking.sort(key=lambda x: x[1], reverse=True)
+        rankings['ROE排名'] = [ticker for ticker, _ in roe_ranking]
         
-        # 综合评分
-        report += "\n### 🎯 综合评分\n\n"
-        
-        scores = {}
-        for ticker in tickers:
-            score = self._calculate_score(stocks_data[ticker])
-            scores[ticker] = score
-            stars = self._get_stars(score)
-            report += f"- **{ticker}**: {score}/100 {stars}\n"
-        
-        # 推荐
-        report += "\n### 💡 投资建议\n\n"
-        best_ticker = max(scores, key=scores.get)
-        report += f"综合评分最高: **{best_ticker}** ({scores[best_ticker]}/100)\n"
-        
-        return report
+        return rankings
     
-    def _calculate_score(self, data: dict) -> int:
-        """计算评分"""
-        score = 50
+    def _generate_summary(self, rankings: Dict[str, List[str]]) -> str:
+        """生成对比摘要"""
+        summary_parts = []
         
-        pe = data.get('pe_ratio', 'N/A')
-        if pe != 'N/A' and isinstance(pe, (int, float)) and pe > 0:
-            if pe < 15:
-                score += 15
-            elif pe > 35:
-                score -= 10
+        if 'PE比率排名' in rankings and rankings['PE比率排名']:
+            best_pe = rankings['PE比率排名'][0]
+            summary_parts.append(f"最佳PE: {best_pe}")
         
-        roe = data.get('roe', 'N/A')
-        if roe != 'N/A' and isinstance(roe, (int, float)):
-            roe_pct = roe * 100 if roe < 1 else roe
-            if roe_pct > 20:
-                score += 20
-            elif roe_pct < 5:
-                score -= 15
+        if 'ROE排名' in rankings and rankings['ROE排名']:
+            best_roe = rankings['ROE排名'][0]
+            summary_parts.append(f"最佳ROE: {best_roe}")
         
-        return max(0, min(100, score))
-    
-    def _get_stars(self, score: int) -> str:
-        """转换为星级"""
-        if score >= 80:
-            return "⭐⭐⭐⭐⭐"
-        elif score >= 70:
-            return "⭐⭐⭐⭐"
-        elif score >= 60:
-            return "⭐⭐⭐"
-        elif score >= 50:
-            return "⭐⭐"
-        else:
-            return "⭐"
+        return " | ".join(summary_parts) if summary_parts else "对比完成"

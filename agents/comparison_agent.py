@@ -14,48 +14,48 @@ class ComparisonAgent(BaseAgent):
         try:
             tickers = self._extract_tickers(query)
             if len(tickers) < 2:
-                return "❌ 需要至少2个股票代码进行对比"
+                return "需要至少2个股票代码进行对比"
             
             # 获取数据
             comparison_data = {}
             for ticker in tickers:
-                stock = yf.Ticker(ticker)
-                info = stock.info
-                comparison_data[ticker] = {
-                    'name': info.get('longName', ticker),
-                    'pe': info.get('trailingPE'),
-                    'roe': info.get('returnOnEquity'),
-                    'market_cap': info.get('marketCap'),
-                    'beta': info.get('beta'),
-                    'div_yield': info.get('dividendYield')
-                }
+                try:
+                    stock = yf.Ticker(ticker)
+                    info = stock.info
+                    comparison_data[ticker] = {
+                        'name': info.get('longName', ticker),
+                        'pe': info.get('trailingPE'),
+                        'roe': info.get('returnOnEquity', 0),
+                        'market_cap': info.get('marketCap', 0),
+                        'beta': info.get('beta'),
+                        'div_yield': info.get('dividendYield', 0)
+                    }
+                except:
+                    comparison_data[ticker] = {
+                        'name': ticker,
+                        'pe': None,
+                        'roe': 0,
+                        'market_cap': 0,
+                        'beta': None,
+                        'div_yield': 0
+                    }
             
-            # 使用 LLM 生成对比分析
-            prompt = f"""
-请对以下股票进行对比分析：
-
-{self._format_comparison_data(comparison_data)}
-
-提供：
-1. 各股票的核心优势
-2. 估值对比分析
-3. 风险对比
-4. 投资建议（哪个更适合什么类型的投资者）
-
-保持客观、专业。
-            """
+            # 构建提示词
+            prompt = self._build_comparison_prompt(comparison_data)
             
-            response = self.llm.invoke(prompt)
-            return response.content
+            # 调用LLM
+            return self._safe_llm_invoke(prompt)
             
         except Exception as e:
-            return f"❌ 对比分析失败: {str(e)}"
+            return f"对比分析失败: {str(e)}"
     
     def _extract_tickers(self, query: str) -> list:
         """提取多个股票代码"""
         import re
+        
         common_stocks = {
-            'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'AMD'
+            'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'AMD',
+            'NFLX', 'TSM', 'V', 'JPM'
         }
         
         found = []
@@ -67,18 +67,33 @@ class ComparisonAgent(BaseAgent):
         
         if not found:
             matches = re.findall(r'\b([A-Z]{2,5})\b', query_upper)
+            common_words = {'VS', 'THE', 'PE', 'AND', 'OR'}
             for match in matches:
-                if match not in {'VS', 'THE', 'PE'}:
+                if match not in common_words:
                     found.append(match)
         
         return list(dict.fromkeys(found))  # 去重
     
-    def _format_comparison_data(self, data: dict) -> str:
-        """格式化对比数据"""
-        lines = []
+    def _build_comparison_prompt(self, data: dict) -> str:
+        """构建对比提示词"""
+        lines = ["请对以下股票进行简明对比:\n"]
+        
         for ticker, info in data.items():
-            lines.append(f"\n**{ticker} ({info['name']})**")
-            lines.append(f"- PE比率: {info['pe']:.2f}" if info['pe'] else "- PE比率: N/A")
-            lines.append(f"- ROE: {info['roe']*100:.1f}%" if info['roe'] else "- ROE: N/A")
-            lines.append(f"- 市值: ${info['market_cap']/1e9:.1f}B" if info['market_cap'] else "- 市值: N/A")
+            lines.append(f"\n{ticker} ({info['name']})")
+            
+            pe = info['pe']
+            lines.append(f"- PE: {pe:.2f}" if pe else "- PE: N/A")
+            
+            roe = info['roe']
+            lines.append(f"- ROE: {roe*100:.1f}%" if roe else "- ROE: N/A")
+            
+            mcap = info['market_cap']
+            lines.append(f"- 市值: ${mcap/1e9:.1f}B" if mcap else "- 市值: N/A")
+        
+        lines.append("\n\n请提供简洁对比(控制在150字以内):")
+        lines.append("1. 各股核心优势")
+        lines.append("2. 估值对比")
+        lines.append("3. 投资建议")
+        lines.append("\n用简洁的中文回答。")
+        
         return "\n".join(lines)

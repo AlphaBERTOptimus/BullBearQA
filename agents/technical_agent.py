@@ -1,105 +1,152 @@
-"""
-技术指标计算工具
-"""
-import yfinance as yf
-from functools import lru_cache
+"""技术分析代理"""
 from typing import Dict, Any, Optional
+import yfinance as yf
 import pandas as pd
 import numpy as np
 
 
-class TechnicalIndicatorTool:
-    """技术指标计算工具类"""
+class TechnicalAgent:
+    """技术分析代理 - 不依赖 LangChain Tool"""
     
     def __init__(self):
-        self._cache_ttl = 300
+        self.name = "TechnicalAgent"
+        self.description = "执行技术指标分析，包括趋势、动量、波动率等"
     
-    @lru_cache(maxsize=100)
-    def get_technical_indicators(self, ticker: str, period: str = "6mo") -> Optional[Dict[str, Any]]:
+    def analyze(self, ticker: str, period: str = "1y") -> Dict[str, Any]:
         """
-        获取技术指标
+        执行技术分析
         
         Args:
             ticker: 股票代码
-            period: 时间周期
+            period: 分析周期
             
         Returns:
-            技术指标字典
+            技术分析结果
         """
         try:
             stock = yf.Ticker(ticker)
-            hist = stock.history(period=period)
+            df = stock.history(period=period)
             
-            if hist.empty:
-                return None
+            if df.empty:
+                return {"error": f"无法获取 {ticker} 的数据"}
             
             # 计算技术指标
-            indicators = {
-                'ticker': ticker,
-                'current_price': float(hist['Close'].iloc[-1]),
-                'rsi': self._calculate_rsi(hist),
-                'macd': self._calculate_macd(hist),
-                'ma20': float(hist['Close'].rolling(window=20).mean().iloc[-1]),
-                'ma50': float(hist['Close'].rolling(window=50).mean().iloc[-1]),
-                'volume': int(hist['Volume'].iloc[-1]),
-            }
+            indicators = self._calculate_indicators(df)
             
-            return indicators
-            
-        except Exception as e:
-            print(f"Error getting technical indicators: {e}")
-            return None
-    
-    def _calculate_rsi(self, hist: pd.DataFrame, period: int = 14) -> Dict[str, Any]:
-        """计算RSI指标"""
-        try:
-            delta = hist['Close'].diff()
-            gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-            
-            rs = gain / loss
-            rsi = 100 - (100 / (1 + rs))
-            rsi_value = float(rsi.iloc[-1])
-            
-            # 判断信号
-            if rsi_value < 30:
-                signal = "🟢 超卖区域，可能反弹"
-            elif rsi_value > 70:
-                signal = "🔴 超买区域，可能回调"
-            else:
-                signal = "🟡 中性区域"
+            # 生成信号
+            signals = self._generate_signals(indicators)
             
             return {
-                'value': rsi_value,
-                'signal': signal
+                "ticker": ticker,
+                "indicators": indicators,
+                "signals": signals,
+                "summary": self._generate_summary(indicators, signals)
             }
-        except:
-            return {'value': 'N/A', 'signal': 'N/A'}
-    
-    def _calculate_macd(self, hist: pd.DataFrame) -> Dict[str, str]:
-        """计算MACD指标"""
-        try:
-            exp1 = hist['Close'].ewm(span=12, adjust=False).mean()
-            exp2 = hist['Close'].ewm(span=26, adjust=False).mean()
-            macd = exp1 - exp2
-            signal_line = macd.ewm(span=9, adjust=False).mean()
             
-            # 判断金叉/死叉
-            if macd.iloc[-1] > signal_line.iloc[-1] and macd.iloc[-2] <= signal_line.iloc[-2]:
-                return {'signal': '🟢 金叉，看涨信号'}
-            elif macd.iloc[-1] < signal_line.iloc[-1] and macd.iloc[-2] >= signal_line.iloc[-2]:
-                return {'signal': '🔴 死叉，看跌信号'}
-            elif macd.iloc[-1] > signal_line.iloc[-1]:
-                return {'signal': '📊 多头排列'}
+        except Exception as e:
+            return {"error": f"技术分析失败: {str(e)}"}
+    
+    def _calculate_indicators(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """计算技术指标"""
+        close = df['Close']
+        
+        # 移动平均线
+        sma_20 = close.rolling(window=20).mean()
+        sma_50 = close.rolling(window=50).mean()
+        sma_200 = close.rolling(window=200).mean()
+        
+        # RSI
+        rsi = self._calculate_rsi(close)
+        
+        # MACD
+        macd, signal, hist = self._calculate_macd(close)
+        
+        # 布林带
+        bb_upper, bb_middle, bb_lower = self._calculate_bollinger_bands(close)
+        
+        current_price = close.iloc[-1]
+        
+        return {
+            "current_price": round(current_price, 2),
+            "sma_20": round(sma_20.iloc[-1], 2) if not pd.isna(sma_20.iloc[-1]) else None,
+            "sma_50": round(sma_50.iloc[-1], 2) if not pd.isna(sma_50.iloc[-1]) else None,
+            "sma_200": round(sma_200.iloc[-1], 2) if not pd.isna(sma_200.iloc[-1]) else None,
+            "rsi": round(rsi.iloc[-1], 2) if not pd.isna(rsi.iloc[-1]) else None,
+            "macd": round(macd.iloc[-1], 2) if not pd.isna(macd.iloc[-1]) else None,
+            "macd_signal": round(signal.iloc[-1], 2) if not pd.isna(signal.iloc[-1]) else None,
+            "bb_upper": round(bb_upper.iloc[-1], 2) if not pd.isna(bb_upper.iloc[-1]) else None,
+            "bb_lower": round(bb_lower.iloc[-1], 2) if not pd.isna(bb_lower.iloc[-1]) else None,
+        }
+    
+    def _calculate_rsi(self, close: pd.Series, period: int = 14) -> pd.Series:
+        """计算RSI"""
+        delta = close.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs))
+        return rsi
+    
+    def _calculate_macd(self, close: pd.Series, fast=12, slow=26, signal=9):
+        """计算MACD"""
+        ema_fast = close.ewm(span=fast).mean()
+        ema_slow = close.ewm(span=slow).mean()
+        macd = ema_fast - ema_slow
+        signal_line = macd.ewm(span=signal).mean()
+        histogram = macd - signal_line
+        return macd, signal_line, histogram
+    
+    def _calculate_bollinger_bands(self, close: pd.Series, period=20, std=2):
+        """计算布林带"""
+        middle = close.rolling(window=period).mean()
+        std_dev = close.rolling(window=period).std()
+        upper = middle + (std_dev * std)
+        lower = middle - (std_dev * std)
+        return upper, middle, lower
+    
+    def _generate_signals(self, indicators: Dict[str, Any]) -> Dict[str, str]:
+        """生成交易信号"""
+        signals = {}
+        
+        # RSI信号
+        if indicators['rsi']:
+            if indicators['rsi'] > 70:
+                signals['rsi'] = "超买"
+            elif indicators['rsi'] < 30:
+                signals['rsi'] = "超卖"
             else:
-                return {'signal': '📊 空头排列'}
-        except:
-            return {'signal': 'N/A'}
-
-
-# 函数式接口
-_tool_instance = TechnicalIndicatorTool()
-
-def get_technical_indicators(ticker: str, period: str = "6mo") -> Optional[Dict[str, Any]]:
-    """函数式接口"""
-    return _tool_instance.get_technical_indicators(ticker, period)
+                signals['rsi'] = "中性"
+        
+        # 趋势信号
+        if indicators['sma_50'] and indicators['sma_200']:
+            if indicators['sma_50'] > indicators['sma_200']:
+                signals['trend'] = "多头"
+            else:
+                signals['trend'] = "空头"
+        
+        # MACD信号
+        if indicators['macd'] and indicators['macd_signal']:
+            if indicators['macd'] > indicators['macd_signal']:
+                signals['macd'] = "看涨"
+            else:
+                signals['macd'] = "看跌"
+        
+        return signals
+    
+    def _generate_summary(self, indicators: Dict[str, Any], signals: Dict[str, str]) -> str:
+        """生成分析摘要"""
+        summary_parts = []
+        
+        if indicators['current_price']:
+            summary_parts.append(f"当前价格: ${indicators['current_price']}")
+        
+        if 'rsi' in signals:
+            summary_parts.append(f"RSI {signals['rsi']}")
+        
+        if 'trend' in signals:
+            summary_parts.append(f"趋势: {signals['trend']}")
+        
+        if 'macd' in signals:
+            summary_parts.append(f"MACD {signals['macd']}")
+        
+        return " | ".join(summary_parts)
